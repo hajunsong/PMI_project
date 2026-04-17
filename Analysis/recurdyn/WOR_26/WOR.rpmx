@@ -1,9 +1,0 @@
-﻿<?xml version="1.0" encoding="UTF-8" ?>
-<AnalysisResultFiles rpmxver="1000" rdsolverver="9.5.10442.0" os="WINDOWS" filename="WOR_26\WOR">
-    <Command ID="1" type="Dynamic" StartTime="0" text="sim/dyn, end = 2, step = 2000">
-        <!--File type="rplt" path=".\WOR.rplt" datatype="New"-->
-        <File type="rad" path=".\WOR.rad" datatype="New" />
-        <File type="ran" path=".\WOR.ran" datatype="New" />
-    </Command>
-    <Command ID="2" type="Stop" StartTime="2" text="stop" />
-</AnalysisResultFiles>

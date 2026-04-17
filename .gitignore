@@ -48,3 +48,6 @@ CMakeLists.txt.user*
 # OS
 .DS_Store
 Thumbs.db
+
+# 대용량 로컬 아카이브 (GitHub 100MB 제한)
+Analysis/PMI.zip
