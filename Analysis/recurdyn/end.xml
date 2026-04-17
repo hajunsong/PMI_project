@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SUBENTITIES>
+	<EXPRESSION>
+		<EX NAME="end_rx">
+			<EDIT_VALUE>dx(body4.Cij, base.origin, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="end_ry">
+			<EDIT_VALUE>dy(body4.Cij, base.origin, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="end_rz">
+			<EDIT_VALUE>dz(body4.Cij, base.origin, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="end_roll">
+			<EDIT_VALUE>roll(body4.Cij, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="end_pitch">
+			<EDIT_VALUE>pitch(body4.Cij, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="end_yaw">
+			<EDIT_VALUE>yaw(body4.Cij, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="end_drx">
+			<EDIT_VALUE>vx(body4.Cij, base.origin, base.origin, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="end_dry">
+			<EDIT_VALUE>vy(body4.Cij, base.origin, base.origin, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="end_drz">
+			<EDIT_VALUE>vz(body4.Cij, base.origin, base.origin, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="end_wx">
+			<EDIT_VALUE>wx(body4.Cij, base.origin, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="end_wy">
+			<EDIT_VALUE>wy(body4.Cij, base.origin, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="end_wz">
+			<EDIT_VALUE>wz(body4.Cij, base.origin, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="end_accx">
+			<EDIT_VALUE>accx(body4.Cij, base.origin, base.origin, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="end_accy">
+			<EDIT_VALUE>accy(body4.Cij, base.origin, base.origin, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="end_accz">
+			<EDIT_VALUE>accz(body4.Cij, base.origin, base.origin, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="end_dwx">
+			<EDIT_VALUE>dwtx(body4.Cij, base.origin, base.origin, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="end_dwy">
+			<EDIT_VALUE>dwty(body4.Cij, base.origin, base.origin, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="end_dwz">
+			<EDIT_VALUE>dtwz(body4.Cij, base.origin, base.origin, base.origin)</EDIT_VALUE>
+		</EX>
+	</EXPRESSION>
+</SUBENTITIES>

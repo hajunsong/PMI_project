@@ -1,0 +1,50 @@
+# CMake / 빌드 산출물
+build/
+cmake-build-*/
+out/
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Testing/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+_deps/
+*.ninja
+.ninja_deps
+.ninja_log
+compile_commands.json
+
+# 컴파일 결과
+*.o
+*.obj
+*.lo
+*.slo
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+*.app
+
+# Qt / CMake 사용자 설정
+CMakeLists.txt.user*
+*.pro.user
+*.pro.user.*
+
+# IDE (로컬 전용)
+.idea/
+*.code-workspace
+
+# 에디터 백업
+*~
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

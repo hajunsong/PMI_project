@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SUBENTITIES>
+	<EXPRESSION>
+		<EX NAME="body1_sijp_x">
+			<EDIT_VALUE>dx(base.Cij, base.origin, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="body1_sijp_y">
+			<EDIT_VALUE>dy(base.Cij, base.origin, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="body1_sijp_z">
+			<EDIT_VALUE>dz(base.Cij, base.origin, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="body1_Cij_psi">
+			<EDIT_VALUE>psi(base.Cij, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="body1_Cij_theta">
+			<EDIT_VALUE>theta(base.Cij, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="body1_Cij_phi">
+			<EDIT_VALUE>phi(base.Cij, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="body1_ri_x">
+			<EDIT_VALUE>dx(body1.Ai, base.origin, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="body1_ri_y">
+			<EDIT_VALUE>dy(body1.Ai, base.origin, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="body1_ri_z">
+			<EDIT_VALUE>dz(body1.Ai, base.origin, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="body1_roll">
+			<EDIT_VALUE>roll(body1.Ai, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="body1_pitch">
+			<EDIT_VALUE>pitch(body1.Ai, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="body1_yaw">
+			<EDIT_VALUE>yaw(body1.Ai, base.origin)</EDIT_VALUE>
+		</EX>
+		<EX NAME="body1_rhoip_x">
+			<EDIT_VALUE>dx(body1.CM, body1.Ai, body1.Ai)</EDIT_VALUE>
+		</EX>
+		<EX NAME="body1_rhoip_y">
+			<EDIT_VALUE>dy(body1.CM, body1.Ai, body1.Ai)</EDIT_VALUE>
+		</EX>
+		<EX NAME="body1_rhoip_z">
+			<EDIT_VALUE>dz(body1.CM, body1.Ai, body1.Ai)</EDIT_VALUE>
+		</EX>
+		<EX NAME="body1_Cii_psi">
+			<EDIT_VALUE>psi(body1.CM, body1.Ai)</EDIT_VALUE>
+		</EX>
+		<EX NAME="body1_Cii_theta">
+			<EDIT_VALUE>theta(body1.CM, body1.Ai)</EDIT_VALUE>
+		</EX>
+		<EX NAME="body1_Cii_phi">
+			<EDIT_VALUE>phi(body1.CM, body1.Ai)</EDIT_VALUE>
+		</EX>
+	</EXPRESSION>
+</SUBENTITIES>
