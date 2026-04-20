@@ -50,4 +50,27 @@ CMakeLists.txt.user*
 Thumbs.db
 
 # 대용량 로컬 아카이브 (GitHub 100MB 제한)
-Analysis/PMI.zip
+analysis/PMI.zip
+# recurdyn: 직속 하위 폴더만 무시, 해당 경로의 파일은 추적
+analysis/recurdyn/*/
+analysis/recurdyn/*.rbak
+analysis/recurdyn/*.icf
+
+# Python (analysis/python)
+analysis/python/**/__pycache__/
+analysis/python/**/*.py[cod]
+analysis/python/**/$py.class
+analysis/python/.venv/
+analysis/python/venv/
+analysis/python/env/
+analysis/python/.pytest_cache/
+analysis/python/.mypy_cache/
+analysis/python/.ruff_cache/
+analysis/python/**/.hypothesis/
+analysis/python/**/*.egg-info/
+analysis/python/dist/
+analysis/python/*.egg
+analysis/python/.coverage
+analysis/python/htmlcov/
+analysis/python/.tox/
+analysis/python/*.csv
