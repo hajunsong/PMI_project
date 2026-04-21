@@ -345,9 +345,6 @@ class ControlMain:
         self.read_data()
 
         csv_path = (
-            # Path(__file__).resolve().parent / "../recurdyn/rec_data_path.csv"
-            # Path(__file__).resolve().parent / "../recurdyn/rec_data_free_fall.csv"
-            # Path(__file__).resolve().parent / "../recurdyn/rec_data_torque.csv"
             Path(__file__).resolve().parent / "../recurdyn/rec_data_motion.csv"
         ).resolve()
         rec_data_raw = np.loadtxt(csv_path, delimiter=",")
@@ -365,7 +362,7 @@ class ControlMain:
             self.body[i].dqi = self.rec_data[self.indx, 35 + i]
 
         des_p = self.rec_data[self.indx, 1:3]
-        des_rpy = self.rec_data[self.indx, 4:7]
+        des_r = body[1].qi + body[2].qi + body[3].qi
 
         des_dp = self.rec_data[self.indx, 7:10]
         des_w = self.rec_data[self.indx, 10:13]
