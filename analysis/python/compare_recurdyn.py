@@ -108,6 +108,44 @@ def prepare_plot_series(
     return py_rs, rd, " (Analysis → RecurDyn time, linear interp)"
 
 
+# 플롯 시 유한값이라도 이 범위를 넘으면 Matplotlib 틱에서 오버플로우가 날 수 있음 (시뮘 폭주 등)
+_DISPLAY_ABS_CLIP = 1e12
+
+
+def _finite_series(y: np.ndarray) -> np.ndarray:
+    """플롯용: ``inf``/``nan`` 및 비정상적으로 큰 유한값은 그리지 않는다."""
+    y = np.asarray(y, dtype=float)
+    out = np.where(np.isfinite(y), y, np.nan)
+    out = np.where(np.abs(out) <= _DISPLAY_ABS_CLIP, out, np.nan)
+    return out
+
+
+def _tight_layout_safe(fig: plt.Figure) -> None:
+    try:
+        fig.tight_layout()
+    except (ValueError, RuntimeError):
+        fig.subplots_adjust(
+            left=0.08, right=0.98, top=0.93, bottom=0.07, hspace=0.35, wspace=0.28
+        )
+
+
+def _ylim_from_finite(ax: plt.Axes, y_rd: np.ndarray, y_py: np.ndarray) -> None:
+    """틱 오버플로우 방지: 유한 샘플만으로 y 범위 설정 (전부 nan 이면 기본 구간)."""
+    y = np.concatenate(
+        [np.asarray(y_rd, dtype=float).ravel(), np.asarray(y_py, dtype=float).ravel()]
+    )
+    y = y[np.isfinite(y)]
+    if y.size == 0:
+        ax.set_ylim(-1.0, 1.0)
+        return
+    lo, hi = float(np.min(y)), float(np.max(y))
+    if lo == hi:
+        ax.set_ylim(lo - 1.0, hi + 1.0)
+    else:
+        pad = 0.05 * (hi - lo)
+        ax.set_ylim(lo - pad, hi + pad)
+
+
 def _save_figure(
     fig: plt.Figure, path: Path, dpi: int, *, show: bool = False
 ) -> None:
@@ -141,8 +179,11 @@ def plot_figure_2x3(
         r, c = divmod(i, 3)
         ax = axes[r][c]
         ic = index_start + i
-        ax.plot(t_rd, rd[:, ic], "b-", lw=1.5, label="RecurDyn")
-        ax.plot(t_py, py[:, ic], "r--", lw=1.5, label="Analysis")
+        yr = _finite_series(rd[:, ic])
+        yp = _finite_series(py[:, ic])
+        ax.plot(t_rd, yr, "b-", lw=1.5, label="RecurDyn")
+        ax.plot(t_py, yp, "r--", lw=1.5, label="Analysis")
+        _ylim_from_finite(ax, yr, yp)
         ax.set_xlabel("Time (s)")
         ax.set_ylabel(ylabels[i])
         ax.set_title(titles[i])
@@ -150,7 +191,7 @@ def plot_figure_2x3(
         if i == legend_subplot_idx:
             ax.legend(loc="upper right", fontsize=8)
 
-    fig.tight_layout()
+    _tight_layout_safe(fig)
     _save_figure(fig, out_path, dpi, show=show)
 
 
@@ -176,8 +217,11 @@ def plot_figure_2x2(
         r, c = divmod(i, 2)
         ax = axes[r][c]
         ic = index_start + i
-        ax.plot(t_rd, rd[:, ic], "b-", lw=1.5, label="RecurDyn")
-        ax.plot(t_py, py[:, ic], "r--", lw=1.5, label="Analysis")
+        yr = _finite_series(rd[:, ic])
+        yp = _finite_series(py[:, ic])
+        ax.plot(t_rd, yr, "b-", lw=1.5, label="RecurDyn")
+        ax.plot(t_py, yp, "r--", lw=1.5, label="Analysis")
+        _ylim_from_finite(ax, yr, yp)
         ax.set_xlabel("Time (s)")
         ax.set_ylabel(ylabels[i])
         ax.set_title(titles[i])
@@ -185,7 +229,7 @@ def plot_figure_2x2(
         if i == legend_subplot_idx:
             ax.legend(loc="upper right", fontsize=8)
 
-    fig.tight_layout()
+    _tight_layout_safe(fig)
     _save_figure(fig, out_path, dpi, show=show)
 
 
@@ -198,7 +242,6 @@ def run_all_plots(
     rd: np.ndarray,
     output_dir: Path,
     file_stem: str,
-    figure_title: str,
     dpi: int,
     *,
     show: bool = False,
@@ -232,7 +275,7 @@ def run_all_plots(
         rd,
         INDEX_END_POS,
         p,
-        f"{figure_title} — End-effector position & orientation",
+        f"End-effector position & orientation",
         ylabels_pos,
         titles_pos,
         dpi,
@@ -266,7 +309,7 @@ def run_all_plots(
         rd,
         INDEX_END_VEL,
         p,
-        f"{figure_title} — End-effector velocity",
+        f"End-effector velocity",
         ylabels_vel,
         titles_vel,
         dpi,
@@ -275,57 +318,57 @@ def run_all_plots(
     )
     written.append(p)
 
-    # 3) 엔드 이펙터 가속도
-    ylabels_acc = [
-        "a_x (m/s²)",
-        "a_y (m/s²)",
-        "a_z (m/s²)",
-        r"$\alpha_x$ (rad/s²)",
-        r"$\alpha_y$ (rad/s²)",
-        r"$\alpha_z$ (rad/s²)",
-    ]
-    titles_acc = [
-        "End-Effector Linear Acceleration a_x",
-        "End-Effector Linear Acceleration a_y",
-        "End-Effector Linear Acceleration a_z",
-        r"End-Effector Angular Acceleration $\alpha_x$",
-        r"End-Effector Angular Acceleration $\alpha_y$",
-        r"End-Effector Angular Acceleration $\alpha_z$",
-    ]
-    p = output_dir / f"{file_stem}_ee_acceleration.png"
-    plot_figure_2x3(
-        t_py,
-        py,
-        t_rd,
-        rd,
-        INDEX_END_ACC,
-        p,
-        f"{figure_title} — End-effector acceleration",
-        ylabels_acc,
-        titles_acc,
-        dpi,
-        legend_subplot_idx=2,
-        show=show,
-    )
-    written.append(p)
+    # # 3) 엔드 이펙터 가속도
+    # ylabels_acc = [
+    #     "a_x (m/s²)",
+    #     "a_y (m/s²)",
+    #     "a_z (m/s²)",
+    #     r"$\alpha_x$ (rad/s²)",
+    #     r"$\alpha_y$ (rad/s²)",
+    #     r"$\alpha_z$ (rad/s²)",
+    # ]
+    # titles_acc = [
+    #     "End-Effector Linear Acceleration a_x",
+    #     "End-Effector Linear Acceleration a_y",
+    #     "End-Effector Linear Acceleration a_z",
+    #     r"End-Effector Angular Acceleration $\alpha_x$",
+    #     r"End-Effector Angular Acceleration $\alpha_y$",
+    #     r"End-Effector Angular Acceleration $\alpha_z$",
+    # ]
+    # p = output_dir / f"{file_stem}_ee_acceleration.png"
+    # plot_figure_2x3(
+    #     t_py,
+    #     py,
+    #     t_rd,
+    #     rd,
+    #     INDEX_END_ACC,
+    #     p,
+    #     f"{figure_title} — End-effector acceleration",
+    #     ylabels_acc,
+    #     titles_acc,
+    #     dpi,
+    #     legend_subplot_idx=2,
+    #     show=show,
+    # )
+    # written.append(p)
 
-    # 4) 모터 각도 q_act
-    p = output_dir / f"{file_stem}_motor_angle.png"
-    plot_figure_2x2(
-        t_py,
-        py,
-        t_rd,
-        rd,
-        INDEX_Q_ACT,
-        p,
-        f"{figure_title} — Motor angle",
-        [f"q_{i} (rad)" for i in range(1, 5)],
-        [f"Motor Angle q_{i}" for i in range(1, 5)],
-        dpi,
-        legend_subplot_idx=1,
-        show=show,
-    )
-    written.append(p)
+    # # 4) 모터 각도 q_act
+    # p = output_dir / f"{file_stem}_motor_angle.png"
+    # plot_figure_2x2(
+    #     t_py,
+    #     py,
+    #     t_rd,
+    #     rd,
+    #     INDEX_Q_ACT,
+    #     p,
+    #     f"{figure_title} — Motor angle",
+    #     [f"q_{i} (rad)" for i in range(1, 5)],
+    #     [f"Motor Angle q_{i}" for i in range(1, 5)],
+    #     dpi,
+    #     legend_subplot_idx=1,
+    #     show=show,
+    # )
+    # written.append(p)
 
     # 5) 관절 각도 q
     p = output_dir / f"{file_stem}_joint_angle.png"
@@ -336,7 +379,7 @@ def run_all_plots(
         rd,
         INDEX_Q,
         p,
-        f"{figure_title} — Joint angle",
+        f"Joint angle",
         [f"q_{i} (rad)" for i in range(1, 5)],
         [f"Joint Angle q_{i}" for i in range(1, 5)],
         dpi,
@@ -345,23 +388,23 @@ def run_all_plots(
     )
     written.append(p)
 
-    # 6) 모터 각속도 dq_act
-    p = output_dir / f"{file_stem}_motor_velocity.png"
-    plot_figure_2x2(
-        t_py,
-        py,
-        t_rd,
-        rd,
-        INDEX_DQ_ACT,
-        p,
-        f"{figure_title} — Motor angle velocity",
-        [f"dq_{i} act (rad/s)" for i in range(1, 5)],
-        [f"Motor Angle Velocity dq_{i}_act" for i in range(1, 5)],
-        dpi,
-        legend_subplot_idx=1,
-        show=show,
-    )
-    written.append(p)
+    # # 6) 모터 각속도 dq_act
+    # p = output_dir / f"{file_stem}_motor_velocity.png"
+    # plot_figure_2x2(
+    #     t_py,
+    #     py,
+    #     t_rd,
+    #     rd,
+    #     INDEX_DQ_ACT,
+    #     p,
+    #     f"{figure_title} — Motor angle velocity",
+    #     [f"dq_{i} act (rad/s)" for i in range(1, 5)],
+    #     [f"Motor Angle Velocity dq_{i}_act" for i in range(1, 5)],
+    #     dpi,
+    #     legend_subplot_idx=1,
+    #     show=show,
+    # )
+    # written.append(p)
 
     # 7) 관절 각속도 dq
     p = output_dir / f"{file_stem}_joint_velocity.png"
@@ -372,7 +415,7 @@ def run_all_plots(
         rd,
         INDEX_DQ,
         p,
-        f"{figure_title} — Joint angle velocity",
+        f"Joint angle velocity",
         [f"dq_{i} (rad/s)" for i in range(1, 5)],
         [f"Joint Angle Velocity dq_{i}" for i in range(1, 5)],
         dpi,
@@ -381,41 +424,41 @@ def run_all_plots(
     )
     written.append(p)
 
-    # 8) 모터 각가속도 ddq_act (plotting.m 172행 루프의 index 오류 보정)
-    p = output_dir / f"{file_stem}_motor_acceleration.png"
-    plot_figure_2x2(
-        t_py,
-        py,
-        t_rd,
-        rd,
-        INDEX_DDQ_ACT,
-        p,
-        f"{figure_title} — Motor angle acceleration",
-        [f"ddq_{i} act (rad/s²)" for i in range(1, 5)],
-        [f"Motor Angle Acceleration ddq_{i}_act" for i in range(1, 5)],
-        dpi,
-        legend_subplot_idx=1,
-        show=show,
-    )
-    written.append(p)
+    # # 8) 모터 각가속도 ddq_act (plotting.m 172행 루프의 index 오류 보정)
+    # p = output_dir / f"{file_stem}_motor_acceleration.png"
+    # plot_figure_2x2(
+    #     t_py,
+    #     py,
+    #     t_rd,
+    #     rd,
+    #     INDEX_DDQ_ACT,
+    #     p,
+    #     f"{figure_title} — Motor angle acceleration",
+    #     [f"ddq_{i} act (rad/s²)" for i in range(1, 5)],
+    #     [f"Motor Angle Acceleration ddq_{i}_act" for i in range(1, 5)],
+    #     dpi,
+    #     legend_subplot_idx=1,
+    #     show=show,
+    # )
+    # written.append(p)
 
-    # 9) 관절 각가속도 ddq
-    p = output_dir / f"{file_stem}_joint_acceleration.png"
-    plot_figure_2x2(
-        t_py,
-        py,
-        t_rd,
-        rd,
-        INDEX_DDQ,
-        p,
-        f"{figure_title} — Joint angle acceleration",
-        [f"ddq_{i} (rad/s²)" for i in range(1, 5)],
-        [f"Joint Angle Acceleration ddq_{i}" for i in range(1, 5)],
-        dpi,
-        legend_subplot_idx=1,
-        show=show,
-    )
-    written.append(p)
+    # # 9) 관절 각가속도 ddq
+    # p = output_dir / f"{file_stem}_joint_acceleration.png"
+    # plot_figure_2x2(
+    #     t_py,
+    #     py,
+    #     t_rd,
+    #     rd,
+    #     INDEX_DDQ,
+    #     p,
+    #     f"{figure_title} — Joint angle acceleration",
+    #     [f"ddq_{i} (rad/s²)" for i in range(1, 5)],
+    #     [f"Joint Angle Acceleration ddq_{i}" for i in range(1, 5)],
+    #     dpi,
+    #     legend_subplot_idx=1,
+    #     show=show,
+    # )
+    # written.append(p)
 
     return written
 
@@ -479,16 +522,11 @@ def main() -> None:
         )
 
     py, rd, align_note = prepare_plot_series(py_raw, rd)
-    figure_title = (
-        f"{args.python_csv.name} vs {args.reference.name} "
-        f"(n_py={len(py_raw)}, n_rd={len(rd)}, n_plot={len(py)}){align_note}"
-    )
     paths = run_all_plots(
         py,
         rd,
         args.output_dir,
         args.prefix,
-        figure_title,
         args.dpi,
         show=args.show,
     )
