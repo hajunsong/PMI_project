@@ -74,3 +74,21 @@ analysis/python/.coverage
 analysis/python/htmlcov/
 analysis/python/.tox/
 analysis/python/*.csv
+
+# C++ (analysis/cpp) — CMake·컴파일·IDE 로컬 산출물
+analysis/cpp/build/
+analysis/cpp/cmake-build-*/
+analysis/cpp/out/
+analysis/cpp/install/
+analysis/cpp/.vs/
+analysis/cpp/**/x64/
+analysis/cpp/**/Debug/
+analysis/cpp/**/Release/
+analysis/cpp/**/RelWithDebInfo/
+analysis/cpp/**/MinSizeRel/
+analysis/cpp/CMakeUserPresets.json
+analysis/cpp/.cache/
+analysis/cpp/vcpkg_installed/
+analysis/cpp/conan/
+analysis/cpp/.conan/
+analysis/cpp/.csv
