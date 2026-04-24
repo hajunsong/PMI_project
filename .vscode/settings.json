@@ -1,0 +1,6 @@
+{
+    "cmake.sourceDirectory": "/home/keti/Project/12_FieldSensor/PMI/analysis/cpp",
+    "cmake.configureSettings": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+    }
+}

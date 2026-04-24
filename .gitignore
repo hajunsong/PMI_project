@@ -91,4 +91,4 @@ analysis/cpp/.cache/
 analysis/cpp/vcpkg_installed/
 analysis/cpp/conan/
 analysis/cpp/.conan/
-analysis/cpp/.csv
+analysis/cpp/data/*.csv

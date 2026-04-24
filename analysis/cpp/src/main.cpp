@@ -1,9 +1,10 @@
-#include <pmi/types.hpp>
-
 #include <iostream>
 
+#include "controlmain.h"
+
 int main() {
-    const pmi::Vec3 v(1.0, 2.0, 3.0);
-    std::cout << "pmi_cpp (Eigen): ||v||^2 = " << v.squaredNorm() << std::endl;
+    ControlMain controlmain;
+    controlmain.run();
+
     return 0;
 }

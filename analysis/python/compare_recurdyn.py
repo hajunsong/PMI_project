@@ -68,7 +68,21 @@ def load_python_output_csv(path: Path) -> np.ndarray:
 
 
 def load_recurdyn_csv(path: Path, strip_step_column: bool) -> np.ndarray:
-    raw = np.loadtxt(path, delimiter=",")
+    """
+    ``np.loadtxt`` 대신 줄 단위로 읽는다. ``main.py`` / C++ ``data_save`` 가
+    마지막 열 뒤에 쉼표를 두면 빈 필드가 생겨 loadtxt가 실패할 수 있음.
+    ``load_python_output_csv`` 와 동일하게 trailing comma 제거.
+    """
+    rows: list[list[float]] = []
+    with path.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.rstrip().rstrip(",").strip()
+            if not line:
+                continue
+            rows.append([float(x.strip()) for x in line.split(",")])
+    if not rows:
+        return np.empty((0, 0), dtype=float)
+    raw = np.asarray(rows, dtype=float)
     if strip_step_column:
         return raw[:, 1:]
     return raw
@@ -352,23 +366,23 @@ def run_all_plots(
     # )
     # written.append(p)
 
-    # # 4) 모터 각도 q_act
-    # p = output_dir / f"{file_stem}_motor_angle.png"
-    # plot_figure_2x2(
-    #     t_py,
-    #     py,
-    #     t_rd,
-    #     rd,
-    #     INDEX_Q_ACT,
-    #     p,
-    #     f"{figure_title} — Motor angle",
-    #     [f"q_{i} (rad)" for i in range(1, 5)],
-    #     [f"Motor Angle q_{i}" for i in range(1, 5)],
-    #     dpi,
-    #     legend_subplot_idx=1,
-    #     show=show,
-    # )
-    # written.append(p)
+    # 4) 모터 각도 q_act
+    p = output_dir / f"{file_stem}_motor_angle.png"
+    plot_figure_2x2(
+        t_py,
+        py,
+        t_rd,
+        rd,
+        INDEX_Q_ACT,
+        p,
+        f"Motor angle",
+        [f"q_{i} (rad)" for i in range(1, 5)],
+        [f"Motor Angle q_{i}" for i in range(1, 5)],
+        dpi,
+        legend_subplot_idx=1,
+        show=show,
+    )
+    written.append(p)
 
     # 5) 관절 각도 q
     p = output_dir / f"{file_stem}_joint_angle.png"
@@ -388,23 +402,23 @@ def run_all_plots(
     )
     written.append(p)
 
-    # # 6) 모터 각속도 dq_act
-    # p = output_dir / f"{file_stem}_motor_velocity.png"
-    # plot_figure_2x2(
-    #     t_py,
-    #     py,
-    #     t_rd,
-    #     rd,
-    #     INDEX_DQ_ACT,
-    #     p,
-    #     f"{figure_title} — Motor angle velocity",
-    #     [f"dq_{i} act (rad/s)" for i in range(1, 5)],
-    #     [f"Motor Angle Velocity dq_{i}_act" for i in range(1, 5)],
-    #     dpi,
-    #     legend_subplot_idx=1,
-    #     show=show,
-    # )
-    # written.append(p)
+    # 6) 모터 각속도 dq_act
+    p = output_dir / f"{file_stem}_motor_velocity.png"
+    plot_figure_2x2(
+        t_py,
+        py,
+        t_rd,
+        rd,
+        INDEX_DQ_ACT,
+        p,
+        f"Motor angle velocity",
+        [f"dq_{i} act (rad/s)" for i in range(1, 5)],
+        [f"Motor Angle Velocity dq_{i}_act" for i in range(1, 5)],
+        dpi,
+        legend_subplot_idx=1,
+        show=show,
+    )
+    written.append(p)
 
     # 7) 관절 각속도 dq
     p = output_dir / f"{file_stem}_joint_velocity.png"
@@ -469,10 +483,10 @@ def main() -> None:
     default_ref = here / "../recurdyn/rec_data_free_fall.csv"
 
     parser = argparse.ArgumentParser(
-        description="python_data vs rec_data — plotting.m 과 같이 여러 PNG로 저장"
+        description="analysis_data vs rec_data"
     )
     parser.add_argument(
-        "--python",
+        "--analysis",
         dest="python_csv",
         type=Path,
         default=default_py,
@@ -499,7 +513,11 @@ def main() -> None:
     parser.add_argument(
         "--keep-step-column",
         action="store_true",
-        help="참조 CSV에서 첫 열(스텝)을 제거하지 않음",
+        help=(
+            "참조 CSV의 첫 열을 유지한다(기본은 제거). "
+            "RecurDyn보내기처럼 첫 열이 스텝/인덱스이고 둘째 열부터가 시간·데이터일 때는 플래그 없음. "
+            "python_data.csv처럼 첫 열이 곧 시간이면 이 플래그를 줘야 열 개수가 맞는다."
+        ),
     )
     parser.add_argument("--dpi", type=int, default=150)
     parser.add_argument(

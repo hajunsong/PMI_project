@@ -330,6 +330,42 @@ class ControlMain:
             self.body[i].ddqi = float(self.ddq[i])
         self.acceleration_calculation()
         return self.dqddq2Yp()
+    
+    def simple_run(self):
+        self.read_data()
+
+        csv_path = (
+            Path(__file__).resolve().parent / "../recurdyn/rec_data_path.csv"
+        ).resolve()
+        rec_data_raw = np.loadtxt(csv_path, delimiter=",")
+        self.rec_data = rec_data_raw[:, 1:]
+
+        self.h = 0.001
+        self.g = -9.80665
+        # rec_data 첫 열: 원 CSV의 시간. 마지막 행 시간으로 종료 시각 설정.
+        self.t_e = float(self.rec_data[-1, 0])
+        self.t_c = 0
+        self.index = 0
+        self.fp = open('python_data.csv', 'w+')
+
+        while self.t_e > self.t_c:
+
+            for i in range(4):
+                self.body[i].qi = self.rec_data[self.index, 31 + i]
+                self.body[i].dqi = self.rec_data[self.index, 35 + i]
+
+            self.position_calculation()
+            self.velocity_calculation()
+
+            self.data_save()
+
+            print(self.t_c)
+
+            self.t_c += self.h
+            self.index += 1
+
+        self.fp.close()
+
 
     def run(self):
         self.read_data()
@@ -549,5 +585,6 @@ class ControlMain:
 
 if __name__ == "__main__":
     main = ControlMain()
+    main.simple_run()
     # main.run()
-    main.run_ik()
+    # main.run_ik()
