@@ -87,6 +87,11 @@ class ControlMain:
         )
 
     def data_save(self):
+        for i in range(4):
+            self.body[i].qi_act = self.body[i].qi/self.body[i].gear
+            self.body[i].dqi_act = self.body[i].dqi/self.body[i].gear
+            self.body[i].ddqi_act = self.body[i].ddqi/self.body[i].gear
+
         self.fp.write(f'{self.t_c},')
         self.fp.write(f'{self.body[3].re[0]}, {self.body[3].re[1]}, {self.body[3].re[2]}, {self.body[3].rpy[0]}, {self.body[3].rpy[1]}, {self.body[3].rpy[2]},')
         self.fp.write(f'{self.body[3].dre[0]}, {self.body[3].dre[1]}, {self.body[3].dre[2]}, {self.body[3].wi[0]}, {self.body[3].wi[1]}, {self.body[3].wi[2]},')
@@ -353,9 +358,12 @@ class ControlMain:
             for i in range(4):
                 self.body[i].qi = self.rec_data[self.index, 31 + i]
                 self.body[i].dqi = self.rec_data[self.index, 35 + i]
+                self.body[i].ddqi = self.rec_data[self.index, 39 + i]
 
             self.position_calculation()
             self.velocity_calculation()
+
+            self.acceleration_calculation()
 
             self.data_save()
 
@@ -365,7 +373,6 @@ class ControlMain:
             self.index += 1
 
         self.fp.close()
-
 
     def run(self):
         self.read_data()
@@ -382,7 +389,7 @@ class ControlMain:
         self.t_e = float(self.rec_data[-1, 0])
         self.t_c = 0
         self.index = 0
-        self.fp = open('python_data.csv', 'w+')
+        self.fp = open('python_data_torque.csv', 'w+')
 
         for i in range(4):
             self.body[i].qi = self.rec_data[self.index, 31 + i]
@@ -401,11 +408,6 @@ class ControlMain:
             self.Y = Y0 + (self.h / 6) * (k1 + 2 * k2 + 2 * k3 + k4)
 
             self.analysis()
-
-            for i in range(4):
-                self.body[i].qi_act = self.body[i].qi/self.body[i].gear
-                self.body[i].dqi_act = self.body[i].dqi/self.body[i].gear
-                self.body[i].ddqi_act = self.body[i].ddqi/self.body[i].gear
 
             self.data_save()
 
@@ -536,7 +538,7 @@ class ControlMain:
 
         print(f"initial q : {self.body[0].qi}, {self.body[1].qi}, {self.body[2].qi}, {self.body[3].qi}")
 
-        while self.t_e >= self.t_c:
+        while self.t_e >= self.t_c and False:
             des_pos = np.array([path_x[self.index], path_y[self.index], path_z[self.index]], dtype=float)
             des_roll = -np.pi / 2.0
             des_pitch = 0.0
@@ -585,6 +587,6 @@ class ControlMain:
 
 if __name__ == "__main__":
     main = ControlMain()
-    main.simple_run()
+    # main.simple_run()
     # main.run()
-    # main.run_ik()
+    main.run_ik()

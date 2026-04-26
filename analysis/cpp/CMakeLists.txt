@@ -30,6 +30,7 @@ find_package(Eigen3 REQUIRED CONFIG)
 add_executable(pmi_cpp
     src/main.cpp
     src/controlmain.cpp
+    src/path_generation.cpp
 )
 
 target_link_libraries(pmi_cpp PRIVATE Eigen3::Eigen)

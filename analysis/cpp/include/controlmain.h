@@ -32,15 +32,7 @@ public:
     ~ControlMain();
 
     void run();
-
-    /** ``Y``가 주어지면 해당 상태로 ``self.Y``를 두고 ``[dq, ddq]``를 반환 (RK4 스테이지). */
-    vec8 analysis(const vec8& Y_in);
-    /** 현재 멤버 ``Y``로 동일 계산. */
-    vec8 analysis();
-
-    void data_save();
-    void open_log(const std::string& path);
-    void close_log();
+    void run_ik();
 
 private:
     Body base{};
@@ -57,6 +49,8 @@ private:
     /** ``rec_data_path.csv``를 읽은 뒤 첫 열을 제외한 부분 (Python ``rec_data_raw[:, 1:]``). */
     Eigen::MatrixXd rec_data;
 
+    std::vector< std::array<double, 3> > path_generation(double x0, double xf, double tf, double ta, double h, bool full_quintic=false);
+
     void read_data();
     void Y2qdq();
     vec8 dqddq2Yp();
@@ -66,4 +60,13 @@ private:
     void mass_force_calculation();
     vec4 EQM();
     void acceleration_calculation();
+
+    /** ``Y``가 주어지면 해당 상태로 ``self.Y``를 두고 ``[dq, ddq]``를 반환 (RK4 스테이지). */
+    vec8 analysis(const vec8& Y_in);
+    /** 현재 멤버 ``Y``로 동일 계산. */
+    vec8 analysis();
+
+    void data_save();
+    void open_log(const std::string& path);
+    void close_log();
 };

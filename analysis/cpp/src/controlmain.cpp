@@ -87,16 +87,11 @@ void ControlMain::close_log()
 
 void ControlMain::run()
 {
-    h = 0.001;
+    h = 0.0001;
     t_c = 0;
-    t_e = 3;
+    t_e = 2;
 
     read_data();
-
-    for (int i = 0; i < NB; ++i) {
-        Y(i) = body[i].qi;
-        Y(4 + i) = body[i].dqi;
-    }
 
     // Python: Path(main.py).parent / "../recurdyn/rec_data_path.csv" → analysis/recurdyn/...
     // __FILE__ = analysis/cpp/src/controlmain.cpp → parent×3 = analysis/
@@ -104,23 +99,36 @@ void ControlMain::run()
         std::filesystem::weakly_canonical(
             std::filesystem::path(__FILE__).parent_path().parent_path().parent_path())
         / "recurdyn"
-        / "rec_data_path.csv";
+        / "rec_data_torque.csv";
     if (!load_recurdyn_csv(csv_path, rec_data)) {
-        std::cerr << "load rec_data_path.csv failed: " << csv_path << '\n';
+        std::cerr << "load rec_data.csv failed: " << csv_path << '\n';
     }
 
     // std::cout << rec_data << std::endl;
 
-    open_log("data/cpp_data.csv");
+    for(int i = 0; i < 4; i++){
+        body[i].qi = rec_data(0, 31 + i);
+        body[i].dqi = rec_data(0, 35 + i);
+    }
+
+    for (int i = 0; i < NB; ++i) {
+        Y(i) = body[i].qi;
+        Y(4 + i) = body[i].dqi;
+    }
+
+    open_log("cpp_data_torque.csv");
+
+    vec8 Y0, k1, k2, k3, k4;
 
     while(t_e > t_c){
-        for(int i = 0; i < NB; i++){
-            body[i].qi = rec_data(index, 31 + i);
-            body[i].dqi = rec_data(index, 35 + i);
-        }
+        Y0 = Y;
+        k1 = analysis(Y0);
+        k2 = analysis(Y0 + (h/2.0)*k1);
+        k3 = analysis(Y0 + (h/2.0)*k2);
+        k4 = analysis(Y0 + h*k3);
+        Y = Y0 + (h/6.0)*(k1 + 2*k2 + 2*k3 + k4);
 
-        position_calculation();
-        velocity_calculation();
+        analysis();
 
         data_save();
 
@@ -130,6 +138,104 @@ void ControlMain::run()
     }
 
     close_log();
+}
+
+void ControlMain::run_ik(){
+    h = 0.001;
+    t_c = 0;
+    t_e = 3;
+
+    read_data();
+
+    // Python: Path(main.py).parent / "../recurdyn/rec_data_path.csv" → analysis/recurdyn/...
+    // __FILE__ = analysis/cpp/src/controlmain.cpp → parent×3 = analysis/
+    const std::filesystem::path csv_path =
+        std::filesystem::weakly_canonical(
+            std::filesystem::path(__FILE__).parent_path().parent_path().parent_path())
+        / "recurdyn"
+        / "rec_data_path.csv";
+    if (!load_recurdyn_csv(csv_path, rec_data)) {
+        std::cerr << "load rec_data.csv failed: " << csv_path << '\n';
+    }
+
+    double wp_t[7] = {0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0};
+    double wp_x[7] = {-0.35, -0.25, 0.25, 0.35, 0.18, -0.18, -0.35};
+    double wp_y[7] = {0.15, -0.28, -0.28, 0.15, 0.37, 0.37, 0.15};
+    double wp_z[3] = {-0.2, 0.13, -0.2};
+
+    std::vector< std::array<double, 3> > path_x1, path_x2, path_x3, path_x4, path_x5, path_x6;
+    path_x1 = path_generation(wp_x[0], wp_x[1], wp_t[1] - wp_t[0], 0.0, h, true); path_x1.pop_back();
+    path_x2 = path_generation(wp_x[1], wp_x[2], wp_t[2] - wp_t[1], 0.0, h, true); path_x2.pop_back();
+    path_x3 = path_generation(wp_x[2], wp_x[3], wp_t[3] - wp_t[2], 0.0, h, true); path_x3.pop_back();
+    path_x4 = path_generation(wp_x[3], wp_x[4], wp_t[4] - wp_t[3], 0.0, h, true); path_x4.pop_back();
+    path_x5 = path_generation(wp_x[4], wp_x[5], wp_t[5] - wp_t[4], 0.0, h, true); path_x5.pop_back();
+    path_x6 = path_generation(wp_x[5], wp_x[6], wp_t[6] - wp_t[5], 0.0, h, true); 
+
+    std::vector< std::array<double, 3> > path_y1, path_y2, path_y3, path_y4, path_y5, path_y6;
+    path_y1 = path_generation(wp_y[0], wp_y[1], wp_t[1] - wp_t[0], 0.0, h, true); path_y1.pop_back();
+    path_y2 = path_generation(wp_y[1], wp_y[2], wp_t[2] - wp_t[1], 0.0, h, true); path_y2.pop_back();
+    path_y3 = path_generation(wp_y[2], wp_y[3], wp_t[3] - wp_t[2], 0.0, h, true); path_y3.pop_back();
+    path_y4 = path_generation(wp_y[3], wp_y[4], wp_t[4] - wp_t[3], 0.0, h, true); path_y4.pop_back();
+    path_y5 = path_generation(wp_y[4], wp_y[5], wp_t[5] - wp_t[4], 0.0, h, true); path_y5.pop_back();
+    path_y6 = path_generation(wp_y[5], wp_y[6], wp_t[6] - wp_t[5], 0.0, h, true);
+
+    std::vector< std::array<double, 3> > path_z1, path_z2, path_z3, path_z4, path_z5, path_z6;
+    path_z1 = path_generation(wp_z[0], wp_z[0], wp_t[1] - wp_t[0], 0.0, h, true); path_z1.pop_back();
+    path_z2 = path_generation(wp_z[0], wp_z[0], wp_t[2] - wp_t[1], 0.0, h, true); path_z2.pop_back();
+    path_z3 = path_generation(wp_z[0], wp_z[0], wp_t[3] - wp_t[2], 0.0, h, true); path_z3.pop_back();
+    path_z4 = path_generation(wp_z[0], wp_z[1], wp_t[4] - wp_t[3], 0.0, h, true); path_z4.pop_back();
+    path_z5 = path_generation(wp_z[1], wp_z[1], wp_t[5] - wp_t[4], 0.0, h, true); path_z5.pop_back();
+    path_z6 = path_generation(wp_z[1], wp_z[2], wp_t[6] - wp_t[5], 0.0, h, true);
+
+    std::vector< std::array<double, 3> > path_x, path_y, path_z;
+    uint path_x_size = path_x1.size() + path_x2.size() + path_x3.size() + path_x4.size() + path_x5.size() + path_x6.size();
+    path_x.reserve(path_x_size);
+    path_x.insert(path_x.end(), path_x1.begin(), path_x1.end());
+    path_x.insert(path_x.end(), path_x2.begin(), path_x2.end());
+    path_x.insert(path_x.end(), path_x3.begin(), path_x3.end());
+    path_x.insert(path_x.end(), path_x4.begin(), path_x4.end());
+    path_x.insert(path_x.end(), path_x5.begin(), path_x5.end());
+    path_x.insert(path_x.end(), path_x6.begin(), path_x6.end());
+    
+    uint path_y_size = path_y1.size() + path_y2.size() + path_y3.size() + path_y4.size() + path_y5.size() + path_y6.size();
+    path_y.reserve(path_y_size);
+    path_y.insert(path_y.end(), path_y1.begin(), path_y1.end());
+    path_y.insert(path_y.end(), path_y2.begin(), path_y2.end());
+    path_y.insert(path_y.end(), path_y3.begin(), path_y3.end());
+    path_y.insert(path_y.end(), path_y4.begin(), path_y4.end());
+    path_y.insert(path_y.end(), path_y5.begin(), path_y5.end());
+    path_y.insert(path_y.end(), path_y6.begin(), path_y6.end());
+    
+    uint path_z_size = path_z1.size() + path_z2.size() + path_z3.size() + path_z4.size() + path_z5.size() + path_z6.size();
+    path_z.reserve(path_z_size);
+    path_z.insert(path_z.end(), path_z1.begin(), path_z1.end());
+    path_z.insert(path_z.end(), path_z2.begin(), path_z2.end());
+    path_z.insert(path_z.end(), path_z3.begin(), path_z3.end());
+    path_z.insert(path_z.end(), path_z4.begin(), path_z4.end());
+    path_z.insert(path_z.end(), path_z5.begin(), path_z5.end());
+    path_z.insert(path_z.end(), path_z6.begin(), path_z6.end());
+
+    std::cout << "path len x/y/z : " << path_x.size() << ", " << path_y.size() << ", " << path_z.size() << std::endl;
+
+    for(int i = 0; i < 4; i++){
+        body[i].qi = rec_data(0, 31 + i);
+        body[i].dqi = rec_data(0, 35 + i);
+    }
+
+    // open_log("cpp_data_torque.csv");
+
+    // while(t_e > t_c){
+
+    //     analysis();
+
+    //     data_save();
+
+    //     std::cout << "t_c : " << t_c << std::endl;
+    //     t_c += h;
+    //     index++;
+    // }
+
+    // close_log();
 }
 
 void ControlMain::read_data()
@@ -156,8 +262,10 @@ void ControlMain::read_data()
     body[0].rhoip = vec3(0.0026336, -1.68446e-05, -0.111117);
     body[0].Cii = euler_zxz(0, 0, 0);
     body[0].mi = 10.0123496865811;
-    fill_inertia(body[0].Jip, 8.29601614566715e-002, -3.28089653994623e-004, 3.91199810914461e-002,
-        2.09012210735718e-006, 6.49458588226152e-002, -1.19428008908532e-004);
+    fill_inertia(body[0].Jip, 
+        8.29601614566715e-002, -3.28089653994623e-004, 
+        3.91199810914461e-002, 2.09012210735718e-006, 
+        6.49458588226152e-002, -1.19428008908532e-004);
     body[0].tau = 0;
 
     // body2
@@ -174,8 +282,10 @@ void ControlMain::read_data()
     body[1].rhoip = vec3(6.90559e-05, -0.0851548, -0.00686211);
     body[1].Cii = euler_zxz(M_PI, M_PI_2, M_PI);
     body[1].mi = 10.4391437674567;
-    fill_inertia(body[1].Jip, 7.80970193464117e-002, 3.53131298101708e-005, 2.55871855807303e-002,
-        5.47282289489732e-003, 7.45746466344453e-002, -8.81620777833472e-006);
+    fill_inertia(body[1].Jip, 
+        7.80970193464117e-002, 3.53131298101708e-005, 
+        2.55871855807303e-002, 5.47282289489732e-003, 
+        7.45746466344453e-002, -8.81620777833472e-006);
     body[1].tau = 375;
 
     // body3
@@ -192,8 +302,10 @@ void ControlMain::read_data()
     body[2].rhoip = vec3(0.0969069, -3.20036e-05, -0.00548574);
     body[2].Cii = euler_zxz(-M_PI_2, M_PI_2, M_PI);
     body[2].mi = 10.3406497234359;
-    fill_inertia(body[2].Jip, 7.92872354716476e-002, 8.26042768438978e-006, 2.27404242493157e-002,
-        4.31986606376804e-003, 7.81409250910383e-002, 5.43833216931251e-006);
+    fill_inertia(body[2].Jip, 
+        7.92872354716476e-002, 8.26042768438978e-006, 
+        2.27404242493157e-002, 4.31986606376804e-003, 
+        7.81409250910383e-002, 5.43833216931251e-006);
     body[2].tau = 60;
 
     // body4
@@ -210,8 +322,10 @@ void ControlMain::read_data()
     body[3].rhoip = vec3(0.0675884, 0.00443192, 0.000679202);
     body[3].Cii = euler_zxz(-M_PI_2, M_PI_2, 0);
     body[3].mi = 7.01416597186014;
-    fill_inertia(body[3].Jip, 3.93493190184971e-002, -9.26169916890393e-004, 1.11764686166838e-002,
-        2.04330936352529e-004, 4.10218257620852e-002, -8.43406506016272e-006);
+    fill_inertia(body[3].Jip, 
+        3.93493190184971e-002, -9.26169916890393e-004, 
+        1.11764686166838e-002, 2.04330936352529e-004, 
+        4.10218257620852e-002, -8.43406506016272e-006);
     body[3].tau = -3;
 
     body[3].sep = vec3(0.18, 0, 0);
@@ -334,11 +448,40 @@ vec4 ControlMain::EQM()
     body[1].Li = body[1].Qih + body[2].Li - body[2].Ki * body[2].Di;
     body[0].Li = body[0].Qih + body[1].Li - body[1].Ki * body[1].Di;
 
+    scalar M11 = body[0].Bi.transpose() * body[0].Ki * body[0].Bi;
+    scalar M12 = body[0].Bi.transpose() * body[1].Ki * body[1].Bi;
+    scalar M13 = body[0].Bi.transpose() * body[2].Ki * body[2].Bi;
+    scalar M14 = body[0].Bi.transpose() * body[3].Ki * body[3].Bi;
+
+    scalar M21 = body[1].Bi.transpose() * body[1].Ki * body[0].Bi;
+    scalar M22 = body[1].Bi.transpose() * body[1].Ki * body[1].Bi;
+    scalar M23 = body[1].Bi.transpose() * body[2].Ki * body[2].Bi;
+    scalar M24 = body[1].Bi.transpose() * body[3].Ki * body[3].Bi;
+
+    scalar M31 = body[2].Bi.transpose() * body[2].Ki * body[0].Bi;
+    scalar M32 = body[2].Bi.transpose() * body[2].Ki * body[1].Bi;
+    scalar M33 = body[2].Bi.transpose() * body[2].Ki * body[2].Bi;
+    scalar M34 = body[2].Bi.transpose() * body[3].Ki * body[3].Bi;
+
+    scalar M41 = body[3].Bi.transpose() * body[3].Ki * body[0].Bi;
+    scalar M42 = body[3].Bi.transpose() * body[3].Ki * body[1].Bi;
+    scalar M43 = body[3].Bi.transpose() * body[3].Ki * body[2].Bi;
+    scalar M44 = body[3].Bi.transpose() * body[3].Ki * body[3].Bi;
+
     mat4 M;
-    for (int i = 0; i < NB; ++i) {
-        for (int j = 0; j < NB; ++j) {
-            M(i, j) = body[i].Bi.transpose() * body[j].Ki * body[j].Bi;
-        }
+    M << M11, M12, M13, M14, 
+        M21, M22, M23, M24, 
+        M31, M32, M33, M34, 
+        M41, M42, M43, M44;
+
+    // mat4 M;
+    for (int i = 0; i < NB; i++) {
+        for (int j = 0; j < NB; j++) {
+            if(i > j)
+                M(i, j) = body[i].Bi.transpose() * body[i].Ki * body[j].Bi;
+            else
+                M(i, j) = body[i].Bi.transpose() * body[j].Ki * body[j].Bi;
+        }       
     }
 
     const vec6& D0 = body[0].Di;
@@ -437,7 +580,7 @@ void ControlMain::data_save()
     fp << t_c << ",";
     fp << ee.re(0) << "," << ee.re(1) << "," << ee.re(2) << "," << ee.rpy(0) << "," << ee.rpy(1) << "," << ee.rpy(2) << ",";
     fp << ee.dre(0) << "," << ee.dre(1) << "," << ee.dre(2) << "," << ee.wi(0) << "," << ee.wi(1) << "," << ee.wi(2) << ",";
-    fp << ee.dre(0) << "," << ee.dre(1) << "," << ee.dre(2) << "," << ee.wi(0) << "," << ee.wi(1) << "," << ee.wi(2) << ",";
+    fp << ee.ddre(0) << "," << ee.ddre(1) << "," << ee.ddre(2) << "," << ee.dwi(0) << "," << ee.dwi(1) << "," << ee.dwi(2) << ",";
     for (int i = 0; i < NB; ++i) fp << body[i].qi_act << ",";
     for (int i = 0; i < NB; ++i) fp << body[i].dqi_act << ",";
     for (int i = 0; i < NB; ++i) fp << body[i].ddqi_act << ",";
