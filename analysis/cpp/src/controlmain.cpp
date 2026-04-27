@@ -633,8 +633,8 @@ Eigen::Matrix<scalar, 5, 4> ControlMain::jacobian_calculation()
     jac_rp = roll_pitch_jacobian_wrt_q(body[3].Ae, dAe_dq);
 
     Eigen::Matrix<scalar, 5, 4> jac;
-    jac.block<3, 4>(0, 0) = jac_pos;
-    jac.block<2, 4>(3, 0) = jac_rp;
+    jac.topRows<3>() = jac_pos;
+    jac.bottomRows<2>() = jac_rp;
 
     return jac;
 }

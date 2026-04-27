@@ -3,6 +3,7 @@
         {
             "name": "Linux",
             "includePath": [
+                "${workspaceFolder}/analysis/cpp/include",
                 "${workspaceFolder}/**",
                 "/usr/include/eigen3"
             ],
