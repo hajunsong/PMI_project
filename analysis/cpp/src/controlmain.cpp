@@ -217,25 +217,76 @@ void ControlMain::run_ik(){
 
     std::cout << "path len x/y/z : " << path_x.size() << ", " << path_y.size() << ", " << path_z.size() << std::endl;
 
-    for(int i = 0; i < 4; i++){
+    for(int i = 0; i < NB; i++){
         body[i].qi = rec_data(0, 31 + i);
-        body[i].dqi = rec_data(0, 35 + i);
+        // body[i].dqi = rec_data(0, 35 + i);
     }
 
-    // open_log("cpp_data_torque.csv");
+    open_log("cpp_data_torque.csv");
 
-    // while(t_e > t_c){
+    std::cout << "initial q : ";
+    for(int i = 0; i < NB; i++){
+        std::cout << body[i].qi;
+        std::cout << (i == (NB-1) ? "\n" : ", ");
+    }
+    std::cout << "initial pos_d : " << vec3(path_x[index][0], path_y[index][0], path_z[index][0]).transpose() << std::endl;
 
-    //     analysis();
+    vec3 des_pos, des_acc, err_pos;
+    scalar des_roll, des_pitch;
+    Eigen::Matrix<scalar, 5, 1> err;
+    Eigen::Matrix<scalar, 5, 1> des_vel;
+    double err_tol = 1e-3;
+    double damping = 1e-7;
+    double alpha = 0.6;
+    using mat5 = Eigen::Matrix<scalar, 5, 5>;
+    vec4 delta_q, q_dot;
+    while(t_e > t_c){
+        des_pos = vec3(path_x[index][0], path_y[index][0], path_z[index][0]);
+        des_roll = -M_PI_2;
+        des_pitch = 0.0;
+        des_vel << path_x[index][1], path_y[index][1], path_z[index][1], scalar(0), scalar(0);
 
-    //     data_save();
+        position_calculation();
 
-    //     std::cout << "t_c : " << t_c << std::endl;
-    //     t_c += h;
-    //     index++;
-    // }
+        err_pos = des_pos - body[3].re;
+        err << err_pos, des_roll - body[3].rpy(0), des_pitch - body[3].rpy(1);
 
-    // close_log();
+        int iter_count = 0;
+        while(true){
+            J = jacobian_calculation();
+
+            JJT_reg = J * J.transpose() + (damping * damping) * mat5::Identity();
+            Eigen::PartialPivLU<mat5> lu(JJT_reg);
+            delta_q = alpha * J.transpose() * lu.solve(err);
+            q_dot = J.transpose() * lu.solve(des_vel);
+
+            for(int i = 0; i < NB; i++){
+                body[i].qi += delta_q(i);
+                body[i].dqi = q_dot(i);
+            }
+
+            position_calculation();
+            velocity_calculation();
+
+            err_pos = des_pos - body[3].re;
+            err << err_pos, des_roll - body[3].rpy(0), des_pitch - body[3].rpy(1);
+
+            iter_count++;
+            if(iter_count > 100){
+                std::cout << "IK failed to converge" << std::endl;
+                break;
+            }
+            if(err.norm() < err_tol) break;
+        }
+
+        data_save();
+
+        std::cout << "t_c : " << t_c << std::endl;
+        t_c += h;
+        index++;
+    }
+
+    close_log();
 }
 
 void ControlMain::read_data()
@@ -535,6 +586,57 @@ void ControlMain::acceleration_calculation()
     for (Body& b : body) {
         b.ddqi_act = b.ddqi / b.gear;
     }
+}
+
+Eigen::Matrix<scalar, 5, 4> ControlMain::jacobian_calculation()
+{
+    // mat3(a,b,...,9) 는 Eigen에서 3×3이 아니라 벡터용 오버로드로 잡혀 컴파일 오류남 → << 사용
+    A01pp_q1 << -std::sin(body[0].qi), -std::cos(body[0].qi), scalar(0), std::cos(body[0].qi),
+        -std::sin(body[0].qi), scalar(0), scalar(0), scalar(0), scalar(0);
+    A12pp_q2 << -std::sin(body[1].qi), -std::cos(body[1].qi), scalar(0), std::cos(body[1].qi),
+        -std::sin(body[1].qi), scalar(0), scalar(0), scalar(0), scalar(0);
+    A23pp_q3 << -std::sin(body[2].qi), -std::cos(body[2].qi), scalar(0), std::cos(body[2].qi),
+        -std::sin(body[2].qi), scalar(0), scalar(0), scalar(0), scalar(0);
+    A34pp_q4 << -std::sin(body[3].qi), -std::cos(body[3].qi), scalar(0), std::cos(body[3].qi),
+        -std::sin(body[3].qi), scalar(0), scalar(0), scalar(0), scalar(0);
+
+    A1_q1 = base.Ai*body[0].Cij*A01pp_q1;
+    A2_q1 = A1_q1*body[1].Cij*body[1].Aijpp;
+    A3_q1 = A2_q1*body[2].Cij*body[2].Aijpp;
+    A4_q1 = A3_q1*body[3].Cij*body[3].Aijpp;
+
+    A2_q2 = body[0].Ai*body[1].Cij*A12pp_q2;
+    A3_q2 = A2_q2*body[2].Cij*body[2].Aijpp;
+    A4_q2 = A3_q2*body[3].Cij*body[3].Aijpp;
+
+    A3_q3 = body[1].Ai*body[2].Cij*A23pp_q3;
+    A4_q3 = A3_q3*body[3].Cij*body[3].Aijpp;
+
+    A4_q4 = body[2].Ai*body[3].Cij*A34pp_q4;
+
+    Ae_q1 = A4_q1*body[3].Ce;
+    Ae_q2 = A4_q2*body[3].Ce;
+    Ae_q3 = A4_q3*body[3].Ce;
+    Ae_q4 = A4_q4*body[3].Ce;
+
+    // jac_pos 는 3×4 → 열 인덱스 0..3 (Python 1-based와 동일 매핑)
+    jac_pos.col(0) = body[0].Hi.cross(body[3].re - body[0].ri);
+    jac_pos.col(1) = body[1].Hi.cross(body[3].re - body[1].ri);
+    jac_pos.col(2) = body[2].Hi.cross(body[3].re - body[2].ri);
+    jac_pos.col(3) = body[3].Hi.cross(body[3].re - body[3].ri);
+
+    dAe_dq[0] = Ae_q1;
+    dAe_dq[1] = Ae_q2;
+    dAe_dq[2] = Ae_q3;
+    dAe_dq[3] = Ae_q4;
+
+    jac_rp = roll_pitch_jacobian_wrt_q(body[3].Ae, dAe_dq);
+
+    Eigen::Matrix<scalar, 5, 4> jac;
+    jac.block<3, 4>(0, 0) = jac_pos;
+    jac.block<2, 4>(3, 0) = jac_rp;
+
+    return jac;
 }
 
 vec8 ControlMain::analysis(const vec8& Y_in)

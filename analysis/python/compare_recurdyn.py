@@ -332,39 +332,39 @@ def run_all_plots(
     )
     written.append(p)
 
-    # 3) 엔드 이펙터 가속도
-    ylabels_acc = [
-        "a_x (m/s²)",
-        "a_y (m/s²)",
-        "a_z (m/s²)",
-        r"$\alpha_x$ (rad/s²)",
-        r"$\alpha_y$ (rad/s²)",
-        r"$\alpha_z$ (rad/s²)",
-    ]
-    titles_acc = [
-        "End-Effector Linear Acceleration a_x",
-        "End-Effector Linear Acceleration a_y",
-        "End-Effector Linear Acceleration a_z",
-        r"End-Effector Angular Acceleration $\alpha_x$",
-        r"End-Effector Angular Acceleration $\alpha_y$",
-        r"End-Effector Angular Acceleration $\alpha_z$",
-    ]
-    p = output_dir / f"{file_stem}_ee_acceleration.png"
-    plot_figure_2x3(
-        t_py,
-        py,
-        t_rd,
-        rd,
-        INDEX_END_ACC,
-        p,
-        f"End-effector acceleration",
-        ylabels_acc,
-        titles_acc,
-        dpi,
-        legend_subplot_idx=2,
-        show=show,
-    )
-    written.append(p)
+    # # 3) 엔드 이펙터 가속도
+    # ylabels_acc = [
+    #     "a_x (m/s²)",
+    #     "a_y (m/s²)",
+    #     "a_z (m/s²)",
+    #     r"$\alpha_x$ (rad/s²)",
+    #     r"$\alpha_y$ (rad/s²)",
+    #     r"$\alpha_z$ (rad/s²)",
+    # ]
+    # titles_acc = [
+    #     "End-Effector Linear Acceleration a_x",
+    #     "End-Effector Linear Acceleration a_y",
+    #     "End-Effector Linear Acceleration a_z",
+    #     r"End-Effector Angular Acceleration $\alpha_x$",
+    #     r"End-Effector Angular Acceleration $\alpha_y$",
+    #     r"End-Effector Angular Acceleration $\alpha_z$",
+    # ]
+    # p = output_dir / f"{file_stem}_ee_acceleration.png"
+    # plot_figure_2x3(
+    #     t_py,
+    #     py,
+    #     t_rd,
+    #     rd,
+    #     INDEX_END_ACC,
+    #     p,
+    #     f"End-effector acceleration",
+    #     ylabels_acc,
+    #     titles_acc,
+    #     dpi,
+    #     legend_subplot_idx=2,
+    #     show=show,
+    # )
+    # written.append(p)
 
     # 4) 모터 각도 q_act
     p = output_dir / f"{file_stem}_motor_angle.png"
@@ -438,41 +438,41 @@ def run_all_plots(
     )
     written.append(p)
 
-    # 8) 모터 각가속도 ddq_act (plotting.m 172행 루프의 index 오류 보정)
-    p = output_dir / f"{file_stem}_motor_acceleration.png"
-    plot_figure_2x2(
-        t_py,
-        py,
-        t_rd,
-        rd,
-        INDEX_DDQ_ACT,
-        p,
-        f"Motor angle acceleration",
-        [f"ddq_{i} act (rad/s²)" for i in range(1, 5)],
-        [f"Motor Angle Acceleration ddq_{i}_act" for i in range(1, 5)],
-        dpi,
-        legend_subplot_idx=1,
-        show=show,
-    )
-    written.append(p)
+    # # 8) 모터 각가속도 ddq_act (plotting.m 172행 루프의 index 오류 보정)
+    # p = output_dir / f"{file_stem}_motor_acceleration.png"
+    # plot_figure_2x2(
+    #     t_py,
+    #     py,
+    #     t_rd,
+    #     rd,
+    #     INDEX_DDQ_ACT,
+    #     p,
+    #     f"Motor angle acceleration",
+    #     [f"ddq_{i} act (rad/s²)" for i in range(1, 5)],
+    #     [f"Motor Angle Acceleration ddq_{i}_act" for i in range(1, 5)],
+    #     dpi,
+    #     legend_subplot_idx=1,
+    #     show=show,
+    # )
+    # written.append(p)
 
-    # 9) 관절 각가속도 ddq
-    p = output_dir / f"{file_stem}_joint_acceleration.png"
-    plot_figure_2x2(
-        t_py,
-        py,
-        t_rd,
-        rd,
-        INDEX_DDQ,
-        p,
-        f"Joint angle acceleration",
-        [f"ddq_{i} (rad/s²)" for i in range(1, 5)],
-        [f"Joint Angle Acceleration ddq_{i}" for i in range(1, 5)],
-        dpi,
-        legend_subplot_idx=1,
-        show=show,
-    )
-    written.append(p)
+    # # 9) 관절 각가속도 ddq
+    # p = output_dir / f"{file_stem}_joint_acceleration.png"
+    # plot_figure_2x2(
+    #     t_py,
+    #     py,
+    #     t_rd,
+    #     rd,
+    #     INDEX_DDQ,
+    #     p,
+    #     f"Joint angle acceleration",
+    #     [f"ddq_{i} (rad/s²)" for i in range(1, 5)],
+    #     [f"Joint Angle Acceleration ddq_{i}" for i in range(1, 5)],
+    #     dpi,
+    #     legend_subplot_idx=1,
+    #     show=show,
+    # )
+    # written.append(p)
 
     return written
 

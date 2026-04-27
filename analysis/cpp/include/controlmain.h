@@ -60,6 +60,18 @@ private:
     void mass_force_calculation();
     vec4 EQM();
     void acceleration_calculation();
+    Eigen::Matrix<scalar, 5, 4> jacobian_calculation();
+    mat3 A01pp_q1, A12pp_q2, A23pp_q3, A34pp_q4;
+    mat3 A1_q1, A2_q1, A3_q1, A4_q1;
+    mat3 A2_q2, A3_q2, A4_q2;
+    mat3 A3_q3, A4_q3, A4_q4;
+    mat3 Ae_q1, Ae_q2, Ae_q3, Ae_q4;
+    vec3 jac_q1, jac_q2, jac_q3, jac_q4;
+    Eigen::Matrix<scalar, 3, 4> jac_pos;
+    std::array<Eigen::Matrix3d, 4> dAe_dq;
+    Eigen::Matrix<scalar, 2, 4> jac_rp;
+    Eigen::Matrix<scalar, 5, 4> J;
+    Eigen::Matrix<scalar, 5, 5> JJT_reg;
 
     /** ``Y``가 주어지면 해당 상태로 ``self.Y``를 두고 ``[dq, ddq]``를 반환 (RK4 스테이지). */
     vec8 analysis(const vec8& Y_in);

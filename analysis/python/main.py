@@ -537,8 +537,9 @@ class ControlMain:
             # self.body[i].dqi = self.rec_data[self.index, 35 + i]
 
         print(f"initial q : {self.body[0].qi}, {self.body[1].qi}, {self.body[2].qi}, {self.body[3].qi}")
+        print(f"initial pos_d : {np.array([path_x[self.index], path_y[self.index], path_z[self.index]], dtype=float)}")
 
-        while self.t_e >= self.t_c and False:
+        while self.t_e >= self.t_c:
             des_pos = np.array([path_x[self.index], path_y[self.index], path_z[self.index]], dtype=float)
             des_roll = -np.pi / 2.0
             des_pitch = 0.0
