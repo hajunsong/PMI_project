@@ -33,6 +33,7 @@ public:
 
     void run();
     void run_ik();
+    void run_vsd();
 
 private:
     Body base{};
@@ -48,7 +49,7 @@ private:
     std::ofstream fp;
     /** ``rec_data_path.csv``를 읽은 뒤 첫 열을 제외한 부분 (Python ``rec_data_raw[:, 1:]``). */
     Eigen::MatrixXd rec_data;
-
+    std::vector< std::array<double, 3> > path_build(double* wp_t, double* wp_x, int wp_n, double ta, double h, bool fuul_quintic=false);
     std::vector< std::array<double, 3> > path_generation(double x0, double xf, double tf, double ta, double h, bool full_quintic=false);
 
     void read_data();
@@ -58,6 +59,10 @@ private:
     void position_calculation();
     void velocity_calculation();
     void mass_force_calculation();
+    /** U = Σ m_i (-g) z_ric (`g`는 멤버 중력 가속도). */
+    scalar gravity_potential_energy() const;
+    /** ∂U/∂q (관절 일반화 중력토크), 중앙차분. */
+    vec4 joint_gravity_torque();
     vec4 EQM();
     void acceleration_calculation();
     Eigen::Matrix<scalar, 5, 4> jacobian_calculation();

@@ -91,4 +91,11 @@ analysis/cpp/.cache/
 analysis/cpp/vcpkg_installed/
 analysis/cpp/conan/
 analysis/cpp/.conan/
-analysis/cpp/data/*.csv
+analysis/cpp/*.csv
+
+# ROS 2 colcon·ROS 1 catkin (ros_ws 워크스페이스 빌드 산출물)
+ros_ws/build/
+ros_ws/install/
+ros_ws/log/
+ros_ws/.colcon/
+ros_ws/devel/

@@ -140,6 +140,108 @@ void ControlMain::run()
     close_log();
 }
 
+void ControlMain::run_vsd(){
+    h = 0.001;
+    t_c = 0;
+    t_e = 3;
+
+    read_data();
+
+        // Python: Path(main.py).parent / "../recurdyn/rec_data_path.csv" → analysis/recurdyn/...
+    // __FILE__ = analysis/cpp/src/controlmain.cpp → parent×3 = analysis/
+    const std::filesystem::path csv_path =
+        std::filesystem::weakly_canonical(
+            std::filesystem::path(__FILE__).parent_path().parent_path().parent_path())
+        / "recurdyn"
+        / "rec_data_path.csv";
+    if (!load_recurdyn_csv(csv_path, rec_data)) {
+        std::cerr << "load rec_data.csv failed: " << csv_path << '\n';
+    }
+
+    double wp_t[7] = {0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0};
+    double wp_x[7] = {-0.35, -0.25, 0.25, 0.35, 0.18, -0.18, -0.35};
+    double wp_y[7] = {0.15, -0.28, -0.28, 0.15, 0.37, 0.37, 0.15};
+    double wp_z[7] = {-0.2, -0.2, -0.2, -0.2, 0.13, 0.13, -0.2};
+
+    std::vector< std::array<double, 3> > path_x, path_y, path_z;
+    path_x = path_build(wp_t, wp_x, 7, 0.0, h, true);
+    path_y = path_build(wp_t, wp_y, 7, 0.0, h, true);
+    path_z = path_build(wp_t, wp_z, 7, 0.0, h, true);
+
+    std::cout << "path len x/y/z : " << path_x.size() << ", " << path_y.size() << ", " << path_z.size() << std::endl;
+
+    for(int i = 0; i < 4; i++){
+        body[i].qi = rec_data(0, 31 + i);
+    }
+
+    open_log("cpp_data_vsd.csv");
+
+    vec3 des_pos, err_pos;
+    scalar des_roll, des_pitch, err_roll, err_pitch;
+    Eigen::Matrix<scalar, 5, 1> err, Ke, Kv;
+    Eigen::Matrix<scalar, 5, 1> des_vel, ev;
+    double Ks[5] = {15000, 15000, 15000, 1500, 1500};
+    double Kd[5] = {1000, 1000, 1000, 10, 10};
+    vec4 tau;
+    while(t_c < t_e){
+        des_pos = vec3(path_x[index][0], path_y[index][0], path_z[index][0]);
+        des_roll = -M_PI_2;
+        des_pitch = 0.0;
+        des_vel << path_x[index][1], path_y[index][1], path_z[index][1], scalar(0), scalar(0);
+
+        position_calculation();
+        velocity_calculation();
+
+        err_pos = des_pos - body[3].re;
+        err_roll = wrap_to_pi(des_roll - body[3].rpy(0));
+        err_pitch = wrap_to_pi(des_pitch - body[3].rpy(1));
+        err << err_pos, err_roll, err_pitch;
+        ev[0] = des_vel[0] - body[3].dre[0];
+        ev[1] = des_vel[1] - body[3].dre[1];
+        ev[2] = des_vel[2] - body[3].dre[2];
+        ev[3] = des_vel[3] - body[3].wi[0];
+        ev[4] = des_vel[4] - body[3].wi[1];
+        J = jacobian_calculation();
+        for(int i = 0; i < 5; i++){
+            Ke[i] = Ks[i]*err[i];
+            Kv[i] = Kd[i]*ev[i];
+        }
+
+        // J: 5×4 (작업공간 ← 관절), Ke+Kd: 5×1 → 관절 공간 토크 τ_joint = J^T * (K e + …)
+        tau = J.transpose() * (Ke + Kv);
+        const vec4 tau_g = joint_gravity_torque();
+        // mass_force_calculation()이 Ti_tau = tau_body / gear 로 덮어쓰므로,
+        // EQM에 들어갈 관절 일반화력이 (τ_vsd + τ_g)가 되려면 tau_body = (τ_vsd + τ_g) * gear.
+        for(int i = 0; i < 4; i++){
+            body[i].tau = (tau[i] + tau_g(i)) * body[i].gear;
+        }
+
+        for (int i = 0; i < NB; ++i) {
+            Y(i) = body[i].qi;
+            Y(4 + i) = body[i].dqi;
+        }
+
+        vec8 Y0, k1, k2, k3, k4;
+
+        Y0 = Y;
+        k1 = analysis(Y0);
+        k2 = analysis(Y0 + (h/2.0)*k1);
+        k3 = analysis(Y0 + (h/2.0)*k2);
+        k4 = analysis(Y0 + h*k3);
+        Y = Y0 + (h/6.0)*(k1 + 2*k2 + 2*k3 + k4);
+
+        analysis();
+
+        data_save();
+
+        std::cout << "t_c : " << t_c << std::endl;
+        t_c += h;
+        index++;
+    }
+
+    close_log();
+}
+
 void ControlMain::run_ik(){
     h = 0.001;
     t_c = 0;
@@ -161,59 +263,12 @@ void ControlMain::run_ik(){
     double wp_t[7] = {0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0};
     double wp_x[7] = {-0.35, -0.25, 0.25, 0.35, 0.18, -0.18, -0.35};
     double wp_y[7] = {0.15, -0.28, -0.28, 0.15, 0.37, 0.37, 0.15};
-    double wp_z[3] = {-0.2, 0.13, -0.2};
-
-    std::vector< std::array<double, 3> > path_x1, path_x2, path_x3, path_x4, path_x5, path_x6;
-    path_x1 = path_generation(wp_x[0], wp_x[1], wp_t[1] - wp_t[0], 0.0, h, true); path_x1.pop_back();
-    path_x2 = path_generation(wp_x[1], wp_x[2], wp_t[2] - wp_t[1], 0.0, h, true); path_x2.pop_back();
-    path_x3 = path_generation(wp_x[2], wp_x[3], wp_t[3] - wp_t[2], 0.0, h, true); path_x3.pop_back();
-    path_x4 = path_generation(wp_x[3], wp_x[4], wp_t[4] - wp_t[3], 0.0, h, true); path_x4.pop_back();
-    path_x5 = path_generation(wp_x[4], wp_x[5], wp_t[5] - wp_t[4], 0.0, h, true); path_x5.pop_back();
-    path_x6 = path_generation(wp_x[5], wp_x[6], wp_t[6] - wp_t[5], 0.0, h, true); 
-
-    std::vector< std::array<double, 3> > path_y1, path_y2, path_y3, path_y4, path_y5, path_y6;
-    path_y1 = path_generation(wp_y[0], wp_y[1], wp_t[1] - wp_t[0], 0.0, h, true); path_y1.pop_back();
-    path_y2 = path_generation(wp_y[1], wp_y[2], wp_t[2] - wp_t[1], 0.0, h, true); path_y2.pop_back();
-    path_y3 = path_generation(wp_y[2], wp_y[3], wp_t[3] - wp_t[2], 0.0, h, true); path_y3.pop_back();
-    path_y4 = path_generation(wp_y[3], wp_y[4], wp_t[4] - wp_t[3], 0.0, h, true); path_y4.pop_back();
-    path_y5 = path_generation(wp_y[4], wp_y[5], wp_t[5] - wp_t[4], 0.0, h, true); path_y5.pop_back();
-    path_y6 = path_generation(wp_y[5], wp_y[6], wp_t[6] - wp_t[5], 0.0, h, true);
-
-    std::vector< std::array<double, 3> > path_z1, path_z2, path_z3, path_z4, path_z5, path_z6;
-    path_z1 = path_generation(wp_z[0], wp_z[0], wp_t[1] - wp_t[0], 0.0, h, true); path_z1.pop_back();
-    path_z2 = path_generation(wp_z[0], wp_z[0], wp_t[2] - wp_t[1], 0.0, h, true); path_z2.pop_back();
-    path_z3 = path_generation(wp_z[0], wp_z[0], wp_t[3] - wp_t[2], 0.0, h, true); path_z3.pop_back();
-    path_z4 = path_generation(wp_z[0], wp_z[1], wp_t[4] - wp_t[3], 0.0, h, true); path_z4.pop_back();
-    path_z5 = path_generation(wp_z[1], wp_z[1], wp_t[5] - wp_t[4], 0.0, h, true); path_z5.pop_back();
-    path_z6 = path_generation(wp_z[1], wp_z[2], wp_t[6] - wp_t[5], 0.0, h, true);
+    double wp_z[7] = {-0.2, -0.2, -0.2, -0.2, 0.13, 0.13, -0.2};
 
     std::vector< std::array<double, 3> > path_x, path_y, path_z;
-    uint path_x_size = path_x1.size() + path_x2.size() + path_x3.size() + path_x4.size() + path_x5.size() + path_x6.size();
-    path_x.reserve(path_x_size);
-    path_x.insert(path_x.end(), path_x1.begin(), path_x1.end());
-    path_x.insert(path_x.end(), path_x2.begin(), path_x2.end());
-    path_x.insert(path_x.end(), path_x3.begin(), path_x3.end());
-    path_x.insert(path_x.end(), path_x4.begin(), path_x4.end());
-    path_x.insert(path_x.end(), path_x5.begin(), path_x5.end());
-    path_x.insert(path_x.end(), path_x6.begin(), path_x6.end());
-    
-    uint path_y_size = path_y1.size() + path_y2.size() + path_y3.size() + path_y4.size() + path_y5.size() + path_y6.size();
-    path_y.reserve(path_y_size);
-    path_y.insert(path_y.end(), path_y1.begin(), path_y1.end());
-    path_y.insert(path_y.end(), path_y2.begin(), path_y2.end());
-    path_y.insert(path_y.end(), path_y3.begin(), path_y3.end());
-    path_y.insert(path_y.end(), path_y4.begin(), path_y4.end());
-    path_y.insert(path_y.end(), path_y5.begin(), path_y5.end());
-    path_y.insert(path_y.end(), path_y6.begin(), path_y6.end());
-    
-    uint path_z_size = path_z1.size() + path_z2.size() + path_z3.size() + path_z4.size() + path_z5.size() + path_z6.size();
-    path_z.reserve(path_z_size);
-    path_z.insert(path_z.end(), path_z1.begin(), path_z1.end());
-    path_z.insert(path_z.end(), path_z2.begin(), path_z2.end());
-    path_z.insert(path_z.end(), path_z3.begin(), path_z3.end());
-    path_z.insert(path_z.end(), path_z4.begin(), path_z4.end());
-    path_z.insert(path_z.end(), path_z5.begin(), path_z5.end());
-    path_z.insert(path_z.end(), path_z6.begin(), path_z6.end());
+    path_x = path_build(wp_t, wp_x, 7, 0.0, h, true);
+    path_y = path_build(wp_t, wp_y, 7, 0.0, h, true);
+    path_z = path_build(wp_t, wp_z, 7, 0.0, h, true);
 
     std::cout << "path len x/y/z : " << path_x.size() << ", " << path_y.size() << ", " << path_z.size() << std::endl;
 
@@ -222,7 +277,7 @@ void ControlMain::run_ik(){
         // body[i].dqi = rec_data(0, 35 + i);
     }
 
-    open_log("cpp_data_torque.csv");
+    open_log("cpp_data_path.csv");
 
     std::cout << "initial q : ";
     for(int i = 0; i < NB; i++){
@@ -232,7 +287,7 @@ void ControlMain::run_ik(){
     std::cout << "initial pos_d : " << vec3(path_x[index][0], path_y[index][0], path_z[index][0]).transpose() << std::endl;
 
     vec3 des_pos, des_acc, err_pos;
-    scalar des_roll, des_pitch;
+    scalar des_roll, des_pitch, err_roll, err_pitch;
     Eigen::Matrix<scalar, 5, 1> err;
     Eigen::Matrix<scalar, 5, 1> des_vel;
     double err_tol = 1e-3;
@@ -249,7 +304,9 @@ void ControlMain::run_ik(){
         position_calculation();
 
         err_pos = des_pos - body[3].re;
-        err << err_pos, des_roll - body[3].rpy(0), des_pitch - body[3].rpy(1);
+        err_roll = wrap_to_pi(des_roll - body[3].rpy(0));
+        err_pitch = wrap_to_pi(des_pitch - body[3].rpy(1));
+        err << err_pos, err_roll, err_pitch;
 
         int iter_count = 0;
         while(true){
@@ -269,7 +326,9 @@ void ControlMain::run_ik(){
             velocity_calculation();
 
             err_pos = des_pos - body[3].re;
-            err << err_pos, des_roll - body[3].rpy(0), des_pitch - body[3].rpy(1);
+            err_roll = wrap_to_pi(des_roll - body[3].rpy(0));
+            err_pitch = wrap_to_pi(des_pitch - body[3].rpy(1));
+            err << err_pos, err_roll, err_pitch;
 
             iter_count++;
             if(iter_count > 100){
@@ -590,7 +649,6 @@ void ControlMain::acceleration_calculation()
 
 Eigen::Matrix<scalar, 5, 4> ControlMain::jacobian_calculation()
 {
-    // mat3(a,b,...,9) 는 Eigen에서 3×3이 아니라 벡터용 오버로드로 잡혀 컴파일 오류남 → << 사용
     A01pp_q1 << -std::sin(body[0].qi), -std::cos(body[0].qi), scalar(0), std::cos(body[0].qi),
         -std::sin(body[0].qi), scalar(0), scalar(0), scalar(0), scalar(0);
     A12pp_q2 << -std::sin(body[1].qi), -std::cos(body[1].qi), scalar(0), std::cos(body[1].qi),
@@ -619,7 +677,6 @@ Eigen::Matrix<scalar, 5, 4> ControlMain::jacobian_calculation()
     Ae_q3 = A4_q3*body[3].Ce;
     Ae_q4 = A4_q4*body[3].Ce;
 
-    // jac_pos 는 3×4 → 열 인덱스 0..3 (Python 1-based와 동일 매핑)
     jac_pos.col(0) = body[0].Hi.cross(body[3].re - body[0].ri);
     jac_pos.col(1) = body[1].Hi.cross(body[3].re - body[1].ri);
     jac_pos.col(2) = body[2].Hi.cross(body[3].re - body[2].ri);
@@ -668,6 +725,41 @@ vec8 ControlMain::analysis()
     return dqddq2Yp();
 }
 
+scalar ControlMain::gravity_potential_energy() const
+{
+    scalar U = 0;
+    for (int i = 0; i < 4; ++i) {
+        U += body[i].mi * (-g) * body[i].ric(2);
+    }
+    return U;
+}
+
+vec4 ControlMain::joint_gravity_torque()
+{
+    constexpr scalar eps = 1e-5;
+    scalar qsave[4];
+    for (int i = 0; i < 4; ++i) {
+        qsave[i] = body[i].qi;
+    }
+
+    vec4 tau_g;
+    for (int j = 0; j < 4; ++j) {
+        body[j].qi = qsave[j] + eps;
+        position_calculation();
+        const scalar up = gravity_potential_energy();
+        body[j].qi = qsave[j] - eps;
+        position_calculation();
+        const scalar um = gravity_potential_energy();
+        tau_g(j) = (up - um) / (2 * eps);
+        body[j].qi = qsave[j];
+    }
+    for (int i = 0; i < 4; ++i) {
+        body[i].qi = qsave[i];
+    }
+    position_calculation();
+    return tau_g;
+}
+
 void ControlMain::data_save()
 {
     if (!fp.is_open()) {
@@ -690,4 +782,16 @@ void ControlMain::data_save()
     for (int i = 0; i < NB; ++i) fp << body[i].dqi << ",";
     for (int i = 0; i < NB; ++i) fp << body[i].ddqi << ",";
     fp << '\n';
+}
+
+std::vector< std::array<double, 3> > ControlMain::path_build(double* wp_t, double* wp_x, int wp_n, double ta, double h, bool full_quintic){
+    std::vector< std::array<double, 3> > path_wp, path_full;
+
+    for(int i = 1; i < wp_n; i++){
+        path_wp = path_generation(wp_x[i - 1], wp_x[i], wp_t[i] - wp_t[i - 1], ta, h, full_quintic);
+        if(i < wp_n - 1 && !path_wp.empty()) path_wp.pop_back();
+        path_full.insert(path_full.end(), path_wp.begin(), path_wp.end());
+    }
+
+    return path_full;
 }

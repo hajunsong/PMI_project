@@ -32,6 +32,14 @@ inline vec3 mat2rpy(mat3 A)
     return vec3{roll, pitch, yaw};
 }
 
+inline double wrap_to_pi(double angle){
+    double wrapped = std::fmod(angle + M_PI, M_PI*2);
+
+    if(wrapped < 0.0) wrapped += M_PI*2;
+
+    return wrapped - M_PI;
+}
+
 inline mat3 droll_dA(const mat3& A, scalar eps = 1e-15){
     const double y = A(2,1);
     const double x = A(2,2);

@@ -1,0 +1,1 @@
+controller_joint_names: ['', 'q1_jnt', 'q2_jnt', 'q3_jnt', 'q4_jnt', 'q1_act', 'q2_act', 'q3_act', 'q4_act', ]

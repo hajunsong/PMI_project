@@ -270,7 +270,7 @@ int main()
     int baudrate = 115200;
 
     // 사용자가 테스트한 node address
-    uint8_t node_address = 0x74;
+    uint8_t node_address = 0x84;
 
     // 모델에 따라 12 또는 14
     int resolution_bits = 14;
