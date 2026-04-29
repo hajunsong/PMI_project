@@ -13,7 +13,7 @@
 int main(int argc, char *argv[])
 {
     uint16_t port = 9000;
-    const char *serialDev = "/dev/CM904";
+    const char *serialDev = "/dev/ttyCM904";
     int baud = 1000000;
 
     if (argc >= 2) {

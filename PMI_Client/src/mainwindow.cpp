@@ -15,8 +15,33 @@
 #include <QStandardItemModel>
 #include <QTimer>
 
+#include <cmath>
 #include <memory>
 #include <utility>
+
+namespace {
+
+QString opModeToText(uint8_t op)
+{
+    switch (op) {
+    case 0:
+        return QStringLiteral("Current");
+    case 1:
+        return QStringLiteral("Velocity");
+    case 3:
+        return QStringLiteral("Position");
+    case 4:
+        return QStringLiteral("Extended Position");
+    case 5:
+        return QStringLiteral("Current-based Position");
+    case 16:
+        return QStringLiteral("PWM");
+    default:
+        return QStringLiteral("Unknown (%1)").arg(op);
+    }
+}
+
+} // namespace
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -50,6 +75,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->btnPosition, &QPushButton::clicked, this, &MainWindow::onModeExtendedPosClicked);
 
     setUiConnected(false);
+    setServoButtonState(false);
     setupTelemetryTable();
 
     QSettings settings;
@@ -98,6 +124,7 @@ void MainWindow::onNetDisconnected()
 {
     m_protocolRx.clear();
     clearTelemetryTable();
+    setServoButtonState(false);
     setUiConnected(false);
     if (ui->btnConnect->isChecked())
         ui->btnConnect->setChecked(false);
@@ -110,6 +137,7 @@ void MainWindow::onNetError(const QString &message)
         ui->btnConnect->setChecked(false);
     m_protocolRx.clear();
     clearTelemetryTable();
+    setServoButtonState(false);
     setUiConnected(false);
 }
 
@@ -128,6 +156,12 @@ void MainWindow::sendClientCmd(uint8_t cmd)
     m_net->requestSend(frame);
 }
 
+void MainWindow::setServoButtonState(bool servoOn)
+{
+    m_servoOn = servoOn;
+    ui->btnServoOn->setText(m_servoOn ? tr("Servo Off") : tr("Servo On"));
+}
+
 void MainWindow::onNetBytesFromWorker(std::vector<uint8_t> chunk)
 {
     auto shared = std::make_shared<std::vector<uint8_t>>(std::move(chunk));
@@ -142,20 +176,21 @@ void MainWindow::onNetBytesFromWorker(std::vector<uint8_t> chunk)
 
 void MainWindow::setupTelemetryTable()
 {
-    constexpr int kCols = 11;
+    constexpr int kCols = 12;
     m_telemetryModel = new QStandardItemModel(static_cast<int>(pmi::kTelemetryAxisCount), kCols, this);
     m_telemetryModel->setHorizontalHeaderLabels({
-        tr("축"),
+        tr("Axis"),
         tr("ID"),
         tr("Op"),
-        tr("상태"),
-        tr("현재 위치 (°)"),
-        tr("현재 속도 (°/s)"),
-        tr("현재 전류 (A)"),
-        tr("목표 위치 (°)"),
-        tr("목표 속도 (°/s)"),
-        tr("목표 전류 (A)"),
-        tr("에러"),
+        tr("State"),
+        tr("Motor Position (deg)"),
+        tr("Encoder Position (deg)"),
+        tr("Motor Velocity (deg/s)"),
+        tr("Motor Current (A)"),
+        tr("Goal Position (deg)"),
+        tr("Goal Velocity (deg/s)"),
+        tr("Goal Current (A)"),
+        tr("Error"),
     });
 
     const QString dash = QStringLiteral("—");
@@ -193,27 +228,37 @@ void MainWindow::updateTelemetryTable(const pmi::ServoTelemetry axes[pmi::kTelem
         return;
     for (int row = 0; row < static_cast<int>(pmi::kTelemetryAxisCount); ++row) {
         const pmi::ServoTelemetry &t = axes[static_cast<size_t>(row)];
+        const uint8_t op = pmi::telemetryOpModeFromIdOp(t.id_op_mode);
         m_telemetryModel->item(row, 1)->setText(QString::number(pmi::telemetryIdFromIdOp(t.id_op_mode)));
-        m_telemetryModel->item(row, 2)->setText(QString::number(pmi::telemetryOpModeFromIdOp(t.id_op_mode)));
+        m_telemetryModel->item(row, 2)->setText(opModeToText(op));
         m_telemetryModel->item(row, 3)->setText(QString::number(t.servo_state));
         m_telemetryModel->item(row, 4)->setText(QString::number(t.present_position, 'f', 4));
-        m_telemetryModel->item(row, 5)->setText(QString::number(t.present_velocity, 'f', 4));
-        m_telemetryModel->item(row, 6)->setText(QString::number(t.present_current, 'f', 4));
-        m_telemetryModel->item(row, 7)->setText(QString::number(t.goal_position, 'f', 4));
-        m_telemetryModel->item(row, 8)->setText(QString::number(t.goal_velocity, 'f', 4));
-        m_telemetryModel->item(row, 9)->setText(QString::number(t.goal_current, 'f', 4));
-        m_telemetryModel->item(row, 10)->setText(QString::number(t.error_state));
+        m_telemetryModel->item(row, 5)->setText(std::isfinite(t.encoder_position) ? QString::number(t.encoder_position, 'f', 4)
+                                                                                   : QStringLiteral("—"));
+        m_telemetryModel->item(row, 6)->setText(QString::number(t.present_velocity, 'f', 4));
+        m_telemetryModel->item(row, 7)->setText(QString::number(t.present_current, 'f', 4));
+        m_telemetryModel->item(row, 8)->setText(QString::number(t.goal_position, 'f', 4));
+        m_telemetryModel->item(row, 9)->setText(QString::number(t.goal_velocity, 'f', 4));
+        m_telemetryModel->item(row, 10)->setText(QString::number(t.goal_current, 'f', 4));
+        m_telemetryModel->item(row, 11)->setText(QString::number(t.error_state));
     }
 }
 
 void MainWindow::onServoOnClicked()
 {
+    if (m_servoOn) {
+        sendClientCmd(pmi::kCmdStop);
+        setServoButtonState(false);
+        return;
+    }
     sendClientCmd(pmi::kCmdServoOn);
+    setServoButtonState(true);
 }
 
 void MainWindow::onStopClicked()
 {
     sendClientCmd(pmi::kCmdStop);
+    setServoButtonState(false);
 }
 
 void MainWindow::onZeroClicked()

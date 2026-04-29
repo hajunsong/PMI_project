@@ -49,11 +49,13 @@ private:
     void setupTelemetryTable();
     void updateTelemetryTable(const pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount]);
     void clearTelemetryTable();
+    void setServoButtonState(bool servoOn);
 
     std::unique_ptr<Ui::MainWindow> ui;
     std::unique_ptr<TcpClient> m_net;
     QStandardItemModel *m_telemetryModel = nullptr;
     std::vector<uint8_t> m_protocolRx;
+    bool m_servoOn = false;
 };
 
 #endif

@@ -41,6 +41,7 @@ void fillDummyTelemetry(pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount], uint
         axes[i].id_op_mode = pmi::packTelemetryIdOp(static_cast<uint8_t>(i + 1), 1);
         axes[i].servo_state = 1;
         axes[i].present_position = static_cast<double>(i) * 0.01 + 1e-6 * static_cast<double>(tick % 1000000);
+        axes[i].encoder_position = axes[i].present_position;
         axes[i].present_velocity = static_cast<double>(i) * 0.001;
         axes[i].present_current = 0.1 * static_cast<double>(i);
         axes[i].goal_position = static_cast<double>(i);
@@ -89,6 +90,7 @@ void printDxlTelemetryLines(std::chrono::steady_clock::time_point now,
         const int id = static_cast<int>(pmi::telemetryIdFromIdOp(t.id_op_mode));
         const int op = static_cast<int>(pmi::telemetryOpModeFromIdOp(t.id_op_mode));
         std::cerr << "[DXL] ID" << id << " op=" << op << " tq=" << static_cast<int>(t.servo_state) << " pos_deg=" << t.present_position
+                  << " enc_deg=" << t.encoder_position
                   << " vel_dps=" << t.present_velocity << " I_A=" << t.present_current << " gPos_deg=" << t.goal_position
                   << " gVel_dps=" << t.goal_velocity << " gI_A=" << t.goal_current << " err=0x" << std::hex
                   << static_cast<int>(t.error_state) << std::dec << std::endl;
@@ -129,40 +131,53 @@ void TcpServer::clientSession(int cfd)
     rx.reserve(4096);
 
     using clock = std::chrono::steady_clock;
+    auto nextPoll = clock::now();
     auto nextTx = clock::now();
-    constexpr auto kTxPeriod = std::chrono::milliseconds(10);
+    constexpr auto kPollPeriod = std::chrono::milliseconds(5);
+    constexpr auto kTxPeriod = std::chrono::milliseconds(100);
     uint64_t txTick = 0;
     auto lastDxlTelemetryLog = clock::time_point{};
     auto lastDxlFailLog = clock::time_point{};
+    pmi::ServoTelemetry latestAxes[pmi::kTelemetryAxisCount]{};
+    bool haveLatestTelemetry = false;
 
     while (true) {
         const auto now = clock::now();
-        if (now >= nextTx) {
-            nextTx = now + kTxPeriod;
+        if (now >= nextPoll) {
+            nextPoll = now + kPollPeriod;
             ++txTick;
             pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount]{};
             if (m_dxl && m_dxl->isOpen()) {
                 if (!m_dxl->syncReadTelemetry(axes)) {
-                    for (auto &a : axes)
-                        a = {};
                     constexpr auto kFailLogInterval = std::chrono::seconds(1);
                     if (now - lastDxlFailLog >= kFailLogInterval) {
                         lastDxlFailLog = now;
                         std::cerr << "[DXL] sync read failed (check bus, baud, IDs 1–4)\n";
                     }
                 } else {
-                    printDxlTelemetryLines(now, lastDxlTelemetryLog, axes);
+                    for (size_t i = 0; i < pmi::kTelemetryAxisCount; ++i)
+                        latestAxes[i] = axes[i];
+                    haveLatestTelemetry = true;
+                    printDxlTelemetryLines(now, lastDxlTelemetryLog, latestAxes);
                 }
             } else {
-                fillDummyTelemetry(axes, txTick);
+                fillDummyTelemetry(latestAxes, txTick);
+                haveLatestTelemetry = true;
             }
-            const std::vector<uint8_t> frame = pmi::buildServerFrame(axes);
-            if (!frame.empty() && !sendTelemetryFrameNonBlock(cfd, frame))
-                goto client_done;
+        }
+
+        if (now >= nextTx) {
+            nextTx = now + kTxPeriod;
+            if (haveLatestTelemetry) {
+                const std::vector<uint8_t> frame = pmi::buildServerFrame(latestAxes);
+                if (!frame.empty() && !sendTelemetryFrameNonBlock(cfd, frame))
+                    goto client_done;
+            }
         }
 
         int timeoutMs = 50;
-        const auto msToNext = std::chrono::duration_cast<std::chrono::milliseconds>(nextTx - clock::now()).count();
+        const auto soonestDeadline = (nextPoll < nextTx) ? nextPoll : nextTx;
+        const auto msToNext = std::chrono::duration_cast<std::chrono::milliseconds>(soonestDeadline - clock::now()).count();
         if (msToNext > 0 && msToNext < timeoutMs)
             timeoutMs = static_cast<int>(msToNext);
         if (timeoutMs < 0)

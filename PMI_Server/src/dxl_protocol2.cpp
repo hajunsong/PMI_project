@@ -3,13 +3,27 @@
 #include "dxl_protocol2.h"
 
 #include <array>
+#include <chrono>
+#include <cerrno>
+#include <cmath>
 #include <cstring>
+#include <fcntl.h>
+#include <iostream>
+#include <string>
+#include <termios.h>
+#include <unistd.h>
 
 #include <dynamixel_sdk/dynamixel_sdk.h>
 
 namespace {
 
 constexpr uint8_t kMotorIds[pmi::kTelemetryAxisCount] = {1, 2, 3, 4};
+constexpr uint8_t kAmt21AddressForMotor2 = 0x84;
+constexpr uint8_t kAmt21AddressForMotor3 = 0x74;
+constexpr uint8_t kAmt21AddressForMotor4 = 0x64;
+constexpr int kAmt21ResolutionBits = 14;
+constexpr int kAmt21BaudRate = 115200;
+constexpr const char *kAmt21DevicePath = "/dev/ttyU2D2";
 
 constexpr uint16_t kAddrOperatingMode = 11;
 constexpr uint16_t kAddrTorqueEnable = 64;
@@ -41,6 +55,78 @@ int16_t readI16Le(const uint8_t *p)
     return v;
 }
 
+speed_t baudrateToTermios(int baudrate)
+{
+    switch (baudrate) {
+    case 9600:
+        return B9600;
+    case 19200:
+        return B19200;
+    case 38400:
+        return B38400;
+    case 57600:
+        return B57600;
+    case 115200:
+        return B115200;
+#ifdef B230400
+    case 230400:
+        return B230400;
+#endif
+#ifdef B460800
+    case 460800:
+        return B460800;
+#endif
+#ifdef B921600
+    case 921600:
+        return B921600;
+#endif
+#ifdef B1000000
+    case 1000000:
+        return B1000000;
+#endif
+#ifdef B2000000
+    case 2000000:
+        return B2000000;
+#endif
+    default:
+        return B115200;
+    }
+}
+
+bool amt21ChecksumOk(uint16_t raw)
+{
+    const uint8_t k1 = (raw >> 15) & 0x01;
+    const uint8_t k0 = (raw >> 14) & 0x01;
+
+    const uint8_t calcK1 = !(((raw >> 13) & 0x01) ^ ((raw >> 11) & 0x01) ^ ((raw >> 9) & 0x01) ^ ((raw >> 7) & 0x01)
+        ^ ((raw >> 5) & 0x01) ^ ((raw >> 3) & 0x01) ^ ((raw >> 1) & 0x01));
+    const uint8_t calcK0 = !(((raw >> 12) & 0x01) ^ ((raw >> 10) & 0x01) ^ ((raw >> 8) & 0x01) ^ ((raw >> 6) & 0x01)
+        ^ ((raw >> 4) & 0x01) ^ ((raw >> 2) & 0x01) ^ ((raw >> 0) & 0x01));
+
+    return (k1 == calcK1) && (k0 == calcK0);
+}
+
+int readExactWithTimeout(int fd, uint8_t *buffer, int length, int timeoutMs)
+{
+    int total = 0;
+    const auto start = std::chrono::steady_clock::now();
+
+    while (total < length) {
+        const int n = static_cast<int>(::read(fd, buffer + total, static_cast<size_t>(length - total)));
+        if (n > 0)
+            total += n;
+        else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+            break;
+
+        const auto now = std::chrono::steady_clock::now();
+        const int elapsedMs = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count());
+        if (elapsedMs >= timeoutMs)
+            break;
+    }
+
+    return total;
+}
+
 } // namespace
 
 DxlBus::~DxlBus()
@@ -65,6 +151,10 @@ void DxlBus::closeUnlocked()
         delete packet_;
         packet_ = nullptr;
     }
+    if (amt21_fd_ >= 0) {
+        ::close(amt21_fd_);
+        amt21_fd_ = -1;
+    }
 }
 
 bool DxlBus::open(const char *devicePath, int baudRate)
@@ -88,6 +178,77 @@ bool DxlBus::open(const char *devicePath, int baudRate)
         closeUnlocked();
         return false;
     }
+    (void)openAmt21PortUnlocked(kAmt21DevicePath, kAmt21BaudRate);
+    return true;
+}
+
+bool DxlBus::openAmt21PortUnlocked(const std::string &devicePath, int baudRate)
+{
+    if (amt21_fd_ >= 0) {
+        ::close(amt21_fd_);
+        amt21_fd_ = -1;
+    }
+
+    const int fd = ::open(devicePath.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
+    if (fd < 0)
+        return false;
+
+    termios tty{};
+    if (::tcgetattr(fd, &tty) != 0) {
+        ::close(fd);
+        return false;
+    }
+
+    const speed_t speed = baudrateToTermios(baudRate);
+    ::cfsetospeed(&tty, speed);
+    ::cfsetispeed(&tty, speed);
+
+    tty.c_cflag &= ~PARENB;
+    tty.c_cflag &= ~CSTOPB;
+    tty.c_cflag &= ~CSIZE;
+    tty.c_cflag |= CS8;
+    tty.c_cflag &= ~CRTSCTS;
+    tty.c_cflag |= CREAD | CLOCAL;
+    tty.c_lflag &= ~(ICANON | ECHO | ECHOE | ECHONL | ISIG);
+    tty.c_iflag &= ~(IXON | IXOFF | IXANY);
+    tty.c_iflag &= ~(INLCR | ICRNL | IGNCR);
+    tty.c_oflag &= ~OPOST;
+    tty.c_cc[VMIN] = 0;
+    tty.c_cc[VTIME] = 1;
+
+    if (::tcsetattr(fd, TCSANOW, &tty) != 0) {
+        ::close(fd);
+        return false;
+    }
+    ::tcflush(fd, TCIOFLUSH);
+
+    amt21_fd_ = fd;
+    return true;
+}
+
+bool DxlBus::readAmt21AngleDegUnlocked(uint8_t nodeAddress, double &angleDegOut)
+{
+    if (amt21_fd_ < 0)
+        return false;
+
+    ::tcflush(amt21_fd_, TCIOFLUSH);
+    if (::write(amt21_fd_, &nodeAddress, 1) != 1)
+        return false;
+    ::tcdrain(amt21_fd_);
+
+    uint8_t rx[2]{0, 0};
+    if (readExactWithTimeout(amt21_fd_, rx, 2, 50) != 2)
+        return false;
+
+    const uint16_t raw = (static_cast<uint16_t>(rx[1]) << 8) | rx[0];
+    if (!amt21ChecksumOk(raw))
+        return false;
+
+    uint16_t position = raw & 0x3FFF;
+    if (kAmt21ResolutionBits == 12)
+        position >>= 2;
+    const double maxCount = (kAmt21ResolutionBits == 14) ? 16384.0 : 4096.0;
+    angleDegOut = static_cast<double>(position) / maxCount * 360.0;
     return true;
 }
 
@@ -130,6 +291,7 @@ bool DxlBus::readMotorTelemetryUnlocked(uint8_t id, pmi::ServoTelemetry &out)
     out.id_op_mode = pmi::packTelemetryIdOp(id, op);
     out.servo_state = tq ? 1 : 0;
     out.present_position = static_cast<double>(presPosRaw) * kPulseToDeg;
+    out.encoder_position = std::nan("");
     out.present_velocity = static_cast<double>(presVelRaw) * kVelRawToRpm * kRpmToDegPerSec;
     out.present_current = static_cast<double>(presCurRaw) * kCurRawToMa * kMaToA;
     out.goal_position = static_cast<double>(goalPosRaw) * kPulseToDeg;
@@ -149,6 +311,48 @@ bool DxlBus::syncReadTelemetry(pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount
         if (!readMotorTelemetryUnlocked(kMotorIds[i], axes[i]))
             return false;
     }
+
+    struct AmtMap {
+        uint8_t motorId;
+        uint8_t nodeAddress;
+        size_t axisIndex;
+    };
+    constexpr AmtMap kAmtMap[3] = {
+        {2, kAmt21AddressForMotor2, 1},
+        {3, kAmt21AddressForMotor3, 2},
+        {4, kAmt21AddressForMotor4, 3},
+    };
+
+    constexpr auto kFailLogInterval = std::chrono::seconds(1);
+    const auto now = std::chrono::steady_clock::now();
+
+    for (size_t i = 0; i < 3; ++i) {
+        const auto &m = kAmtMap[i];
+        double amtAngleDeg = 0.0;
+        const bool ok = readAmt21AngleDegUnlocked(m.nodeAddress, amtAngleDeg);
+        if (ok) {
+            axes[m.axisIndex].encoder_position = amtAngleDeg;
+            if (amt21_in_fail_state_[i]) {
+                std::cerr << "[AMT21] recovered: DXL ID " << static_cast<int>(m.motorId) << " addr=0x" << std::hex
+                          << static_cast<int>(m.nodeAddress) << std::dec << " after " << amt21_fail_count_[i]
+                          << " failed read(s)\n";
+                amt21_in_fail_state_[i] = false;
+                amt21_fail_count_[i] = 0;
+                amt21_last_fail_log_[i] = {};
+            }
+            continue;
+        }
+
+        ++amt21_fail_count_[i];
+        if (!amt21_in_fail_state_[i] || (now - amt21_last_fail_log_[i]) >= kFailLogInterval) {
+            std::cerr << "[AMT21] read failed: DXL ID " << static_cast<int>(m.motorId) << " addr=0x" << std::hex
+                      << static_cast<int>(m.nodeAddress) << std::dec << " -> encoder_position unavailable (fail count="
+                      << amt21_fail_count_[i] << ")\n";
+            amt21_last_fail_log_[i] = now;
+        }
+        amt21_in_fail_state_[i] = true;
+    }
+
     return true;
 }
 

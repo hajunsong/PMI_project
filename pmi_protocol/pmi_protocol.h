@@ -25,7 +25,7 @@ constexpr uint8_t kSof1 = 0xAA;
 constexpr uint8_t kSof2 = 0x55;
 constexpr uint8_t kFrameEof = 0xFE;
 
-constexpr size_t kTelemetryBlockBytes = 51;
+constexpr size_t kTelemetryBlockBytes = 59;
 constexpr size_t kTelemetryAxisCount = 4;
 constexpr size_t kServerPayloadBytes = kTelemetryBlockBytes * kTelemetryAxisCount;
 
@@ -41,6 +41,8 @@ struct ServoTelemetry {
     uint8_t servo_state = 0;
     /// SI-style fields (PMI_Server converts from DYNAMIXEL raw): degrees, deg/s, amperes.
     double present_position = 0.0;
+    /// External encoder position in degrees (AMT21). When unavailable, server may send NaN.
+    double encoder_position = 0.0;
     double present_velocity = 0.0;
     double present_current = 0.0;
     double goal_position = 0.0;
