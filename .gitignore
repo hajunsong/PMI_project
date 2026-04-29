@@ -99,3 +99,25 @@ ros_ws/install/
 ros_ws/log/
 ros_ws/.colcon/
 ros_ws/devel/
+
+# MuJoCo RL (pmi_mujoco_rl: venv, 녹화·테스트 산출물)
+.venv_mujoco_rl/
+pmi_mujoco_rl/.venv/
+pmi_mujoco_rl/venv/
+pmi_mujoco_rl/env/
+pmi_mujoco_rl/**/__pycache__/
+pmi_mujoco_rl/**/*.py[cod]
+pmi_mujoco_rl/**/$py.class
+pmi_mujoco_rl/**/*.egg-info/
+pmi_mujoco_rl/dist/
+pmi_mujoco_rl/build/
+pmi_mujoco_rl/*.egg
+pmi_mujoco_rl/.pytest_cache/
+pmi_mujoco_rl/.mypy_cache/
+pmi_mujoco_rl/.ruff_cache/
+pmi_mujoco_rl/**/.hypothesis/
+pmi_mujoco_rl/.coverage
+pmi_mujoco_rl/htmlcov/
+pmi_mujoco_rl/.tox/
+pmi_mujoco_rl/outputs/
+pmi_mujoco_rl/**/*.mp4

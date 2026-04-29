@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pmi-mujoco-rl"
+version = "0.1.0"
+description = "MuJoCo RL scaffolding for PMI robot from pmi_description URDF"
+requires-python = ">=3.10"
+dependencies = [
+  "mujoco>=3.2",
+  "numpy>=1.24",
+  "gymnasium>=0.29",
+  "imageio>=2.31",
+  "imageio-ffmpeg>=0.5",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pmi_mujoco_rl*"]
