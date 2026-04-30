@@ -1,4 +1,4 @@
-"""기본 Gymnasium 환경: 행동은 4축 모터, 상태는 전역 관절각·속도."""
+"""기본 Gymnasium 환경: 행동은 4축 모터(q*_jnt), 상태는 전역 관절각·속도."""
 
 from __future__ import annotations
 

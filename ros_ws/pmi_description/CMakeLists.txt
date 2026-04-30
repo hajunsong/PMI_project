@@ -1,20 +1,14 @@
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 2.8.3)
+
 project(pmi_description)
 
-if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  add_compile_options(-Wall -Wextra -Wpedantic)
-endif()
+find_package(catkin REQUIRED)
 
-find_package(ament_cmake REQUIRED)
+catkin_package()
 
-install(DIRECTORY urdf launch config
-  DESTINATION share/${PROJECT_NAME}
-)
+find_package(roslaunch)
 
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/meshes")
-  install(DIRECTORY meshes
-    DESTINATION share/${PROJECT_NAME}
-  )
-endif()
-
-ament_package()
+foreach(dir config launch meshes urdf)
+	install(DIRECTORY ${dir}/
+		DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/${dir})
+endforeach(dir)

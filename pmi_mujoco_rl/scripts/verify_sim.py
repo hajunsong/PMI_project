@@ -21,7 +21,6 @@ def main() -> None:
     # 중력 0: URDF equalities·STL 없이도 초기 스모크 테스트만 빠르게 확인.
     opts = LoadOptions(
         disable_collision=True,
-        mimic_equalities=True,
         gravity=(0.0, 0.0, 0.0),
     )
     m = load_pmi_model(opts)

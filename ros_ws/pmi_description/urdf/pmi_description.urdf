@@ -8,17 +8,17 @@
     name="base_link">
     <inertial>
       <origin
-        xyz="0.00094692 -0.024204 0.07333"
+        xyz="-0.00082323 0.09644 -0.0063291"
         rpy="0 0 0" />
       <mass
-        value="2.1494" />
+        value="2.4727" />
       <inertia
-        ixx="0.011337"
-        ixy="-1.3746E-06"
-        ixz="-1.6639E-06"
-        iyy="0.022966"
-        iyz="-5.9757E-05"
-        izz="0.01236" />
+        ixx="0.011422"
+        ixy="1.6542E-06"
+        ixz="1.3919E-06"
+        iyy="0.012445"
+        iyz="-5.9743E-05"
+        izz="0.023105" />
     </inertial>
     <visual>
       <origin
@@ -48,17 +48,17 @@
     name="link1">
     <inertial>
       <origin
-        xyz="0.0027475 -1.8438E-09 -0.11231"
+        xyz="0.0029766 -1.9976E-09 -0.10913"
         rpy="0 0 0" />
       <mass
-        value="1.2226" />
+        value="1.1285" />
       <inertia
-        ixx="0.0035738"
-        ixy="-1.2118E-07"
-        ixz="8.2648E-08"
-        iyy="0.0035191"
+        ixx="0.0034546"
+        ixy="-4.1833E-08"
+        ixz="8.2656E-08"
+        iyy="0.0034685"
         iyz="-2.2223E-12"
-        izz="0.0016378" />
+        izz="0.0014719" />
     </inertial>
     <visual>
       <origin
@@ -85,11 +85,11 @@
     </collision>
   </link>
   <joint
-    name="q1_jnt"
+    name="jnt1"
     type="revolute">
     <origin
-      xyz="0 0 -0.02"
-      rpy="-3.1416 0 -3.1352" />
+      xyz="0 0 0"
+      rpy="3.1416 0 0" />
     <parent
       link="base_link" />
     <child
@@ -97,30 +97,26 @@
     <axis
       xyz="0 0 1" />
     <limit
-      lower="-3.14"
-      upper="3.14"
+      lower="-100"
+      upper="100"
       effort="10"
       velocity="100" />
-    <mimic
-      joint="q1_act"
-      multiplier="0.53333"
-      offset="0" />
   </joint>
   <link
     name="link2">
     <inertial>
       <origin
-        xyz="4.2346E-05 -0.08382 -0.0066027"
+        xyz="5.8908E-05 -0.083968 -0.0062912"
         rpy="0 0 0" />
       <mass
-        value="1.2006" />
+        value="1.2748" />
       <inertia
-        ixx="0.0026567"
-        ixy="1.4802E-08"
-        ixz="-1.7855E-06"
-        iyy="0.0012237"
-        iyz="-2.3227E-06"
-        izz="0.0029349" />
+        ixx="0.0027247"
+        ixy="2.3397E-08"
+        ixz="-1.513E-06"
+        iyy="0.0013258"
+        iyz="-2.3923E-06"
+        izz="0.0029712" />
     </inertial>
     <visual>
       <origin
@@ -147,11 +143,11 @@
     </collision>
   </link>
   <joint
-    name="q2_jnt"
+    name="jnt2"
     type="revolute">
     <origin
       xyz="0 0 -0.22"
-      rpy="1.5708 0 0.0063959" />
+      rpy="1.5708 0 0" />
     <parent
       link="link1" />
     <child
@@ -159,30 +155,26 @@
     <axis
       xyz="0.0063958 0 -0.99998" />
     <limit
-      lower="-3.14"
-      upper="3.14"
+      lower="-100"
+      upper="100"
       effort="10"
       velocity="100" />
-    <mimic
-      joint="q2_act"
-      multiplier="6.66667"
-      offset="0" />
   </joint>
   <link
     name="link3">
     <inertial>
       <origin
-        xyz="0.087068 -1.1058E-07 -0.0059398"
+        xyz="0.095221 -3.7333E-05 -0.004723"
         rpy="0 0 0" />
       <mass
-        value="1.0076" />
+        value="1.2621" />
       <inertia
-        ixx="0.0008256"
-        ixy="3.1472E-09"
-        ixz="5.787E-06"
-        iyy="0.003624"
-        iyz="-5.8304E-10"
-        izz="0.0040924" />
+        ixx="0.0010938"
+        ixy="2.3488E-08"
+        ixz="5.6708E-06"
+        iyy="0.0037848"
+        iyz="-4.7642E-08"
+        izz="0.0042272" />
     </inertial>
     <visual>
       <origin
@@ -209,42 +201,38 @@
     </collision>
   </link>
   <joint
-    name="q3_jnt"
+    name="jnt3"
     type="revolute">
     <origin
       xyz="0 -0.23 0"
-      rpy="0.0063959 0 -1.5708" />
+      rpy="0 0 -1.5708" />
     <parent
       link="link2" />
     <child
       link="link3" />
     <axis
-      xyz="0 0 -1" />
+      xyz="0 0 1" />
     <limit
-      lower="-3.14"
-      upper="3.14"
+      lower="-100"
+      upper="100"
       effort="10"
       velocity="100" />
-    <mimic
-      joint="q3_act"
-      multiplier="3.33333"
-      offset="0" />
   </joint>
   <link
     name="link4">
     <inertial>
       <origin
-        xyz="0.069398 0.004644 0.0014702"
+        xyz="0.068913 0.0046115 0.0014599"
         rpy="0 0 0" />
       <mass
-        value="0.85355" />
+        value="0.85956" />
       <inertia
-        ixx="0.00072512"
+        ixx="0.0007259"
         ixy="6.1552E-06"
         ixz="3.5026E-06"
-        iyy="0.0013568"
+        iyy="0.0013575"
         iyz="3.0696E-08"
-        izz="0.0018088" />
+        izz="0.001809" />
     </inertial>
     <visual>
       <origin
@@ -271,7 +259,7 @@
     </collision>
   </link>
   <joint
-    name="q4_jnt"
+    name="jnt4"
     type="revolute">
     <origin
       xyz="0.23 0 0"
@@ -283,244 +271,8 @@
     <axis
       xyz="0 0 1" />
     <limit
-      lower="-3.14"
-      upper="3.14"
-      effort="10"
-      velocity="100" />
-    <mimic
-      joint="q4_act"
-      multiplier="3.33333"
-      offset="0" />
-  </joint>
-  <link
-    name="link01">
-    <inertial>
-      <origin
-        xyz="5.5511E-17 8.1332E-18 -0.0061604"
-        rpy="0 0 0" />
-      <mass
-        value="0.031263" />
-      <inertia
-        ixx="5.9458E-06"
-        ixy="-3.8921E-14"
-        ixz="-3.2055E-22"
-        iyy="5.9458E-06"
-        iyz="2.9435E-22"
-        izz="7.8696E-06" />
-    </inertial>
-    <visual>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="package://pmi_description/meshes/link01.STL" />
-      </geometry>
-      <material
-        name="">
-        <color
-          rgba="0.79216 0.81961 0.93333 1" />
-      </material>
-    </visual>
-    <collision>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="package://pmi_description/meshes/link01.STL" />
-      </geometry>
-    </collision>
-  </link>
-  <joint
-    name="q1_act"
-    type="revolute">
-    <origin
-      xyz="0 -0.14 -0.02"
-      rpy="-3.1416 0 1.5708" />
-    <parent
-      link="base_link" />
-    <child
-      link="link01" />
-    <axis
-      xyz="0 0 1" />
-    <limit
-      lower="-3.14"
-      upper="3.14"
-      effort="10"
-      velocity="100" />
-  </joint>
-  <link
-    name="link02">
-    <inertial>
-      <origin
-        xyz="6.5945E-07 9.3491E-07 0.01996"
-        rpy="0 0 0" />
-      <mass
-        value="0.10842" />
-      <inertia
-        ixx="2.8381E-05"
-        ixy="1.7708E-08"
-        ixz="3.5646E-09"
-        iyy="2.8462E-05"
-        iyz="8.7331E-10"
-        izz="4.6591E-05" />
-    </inertial>
-    <visual>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="package://pmi_description/meshes/link02.STL" />
-      </geometry>
-      <material
-        name="">
-        <color
-          rgba="0.79216 0.81961 0.93333 1" />
-      </material>
-    </visual>
-    <collision>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="package://pmi_description/meshes/link02.STL" />
-      </geometry>
-    </collision>
-  </link>
-  <joint
-    name="q2_act"
-    type="revolute">
-    <origin
-      xyz="0 -0.25 -0.02"
-      rpy="-3.1416 0 1.5708" />
-    <parent
-      link="base_link" />
-    <child
-      link="link02" />
-    <axis
-      xyz="0 0 1" />
-    <limit
-      lower="-3.14"
-      upper="3.14"
-      effort="10"
-      velocity="100" />
-  </joint>
-  <link
-    name="link03">
-    <inertial>
-      <origin
-        xyz="-9.2316E-07 7.2482E-07 0.01996"
-        rpy="0 0 0" />
-      <mass
-        value="0.10842" />
-      <inertia
-        ixx="2.8411E-05"
-        ixy="-1.3701E-08"
-        ixz="4.0204E-09"
-        iyy="2.8432E-05"
-        iyz="8.2403E-09"
-        izz="4.6591E-05" />
-    </inertial>
-    <visual>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="package://pmi_description/meshes/link03.STL" />
-      </geometry>
-      <material
-        name="">
-        <color
-          rgba="0.79216 0.81961 0.93333 1" />
-      </material>
-    </visual>
-    <collision>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="package://pmi_description/meshes/link03.STL" />
-      </geometry>
-    </collision>
-  </link>
-  <joint
-    name="q3_act"
-    type="revolute">
-    <origin
-      xyz="0.075 -0.25 -0.02"
-      rpy="3.1416 0 1.5708" />
-    <parent
-      link="base_link" />
-    <child
-      link="link03" />
-    <axis
-      xyz="0 0 1" />
-    <limit
-      lower="-3.14"
-      upper="3.14"
-      effort="10"
-      velocity="100" />
-  </joint>
-  <link
-    name="link04">
-    <inertial>
-      <origin
-        xyz="-9.2316E-07 7.2482E-07 0.01996"
-        rpy="0 0 0" />
-      <mass
-        value="0.10842" />
-      <inertia
-        ixx="2.8411E-05"
-        ixy="-1.3701E-08"
-        ixz="4.0204E-09"
-        iyy="2.8432E-05"
-        iyz="8.2403E-09"
-        izz="4.6591E-05" />
-    </inertial>
-    <visual>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="package://pmi_description/meshes/link04.STL" />
-      </geometry>
-      <material
-        name="">
-        <color
-          rgba="0.79216 0.81961 0.93333 1" />
-      </material>
-    </visual>
-    <collision>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="package://pmi_description/meshes/link04.STL" />
-      </geometry>
-    </collision>
-  </link>
-  <joint
-    name="q4_act"
-    type="revolute">
-    <origin
-      xyz="-0.075 -0.25 -0.02"
-      rpy="3.1416 0 1.5708" />
-    <parent
-      link="base_link" />
-    <child
-      link="link04" />
-    <axis
-      xyz="0 0 1" />
-    <limit
-      lower="-3.14"
-      upper="3.14"
+      lower="-100"
+      upper="100"
       effort="10"
       velocity="100" />
   </joint>

@@ -87,16 +87,10 @@ def main() -> None:
         action="store_true",
         help="geom 접촉 활성화(LoadOptions.disable_collision=False)",
     )
-    ap.add_argument(
-        "--no-equality",
-        action="store_true",
-        help="mimic equality 비활성화(디버그용)",
-    )
     args = ap.parse_args()
 
     opts = LoadOptions(
         disable_collision=not args.collision,
-        mimic_equalities=not args.no_equality,
     )
     model = load_pmi_model(opts)
     if args.summary:

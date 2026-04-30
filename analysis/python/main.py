@@ -9,6 +9,30 @@ from utils import mat2rpy, roll_pitch_jacobian_wrt_q, skew, wrap_to_pi
 from path_generation import path_generation
 
 
+def _path_build_full_quintic(wp_t, wp_vals, h):
+    """
+    C++ ``ControlMain::path_build`` 와 동일: 웨이포인트 사이를 각각 단일 5차(휴지–휴지)로 잇고,
+    내부 경계는 끝 샘플을 제거해 이어 붙인다. ``(N, 3)`` = [pos, vel, acc].
+    """
+    wp_t = np.asarray(wp_t, dtype=float)
+    wp_vals = np.asarray(wp_vals, dtype=float)
+    wp_n = len(wp_t)
+    parts = []
+    for i in range(1, wp_n):
+        seg = path_generation(
+            float(wp_vals[i - 1]),
+            float(wp_vals[i]),
+            float(wp_t[i] - wp_t[i - 1]),
+            0.0,
+            h,
+            full_quintic=True,
+        )
+        if i < wp_n - 1 and len(seg) > 0:
+            seg = seg[:-1]
+        parts.append(seg)
+    return np.vstack(parts)
+
+
 class Body:
     def __init__(self):
         self.qi = 0
@@ -418,6 +442,134 @@ class ControlMain:
 
         self.fp.close()
 
+    def run_vsd(self):
+        def gravity_potential_energy():
+            U = 0.0
+            for i in range(4):
+                U += self.body[i].mi * (-self.g) * self.body[i].ric[2]
+            return U
+
+        def joint_gravity_torque():
+            eps = 1e-5
+            qsave = [float(self.body[i].qi) for i in range(4)]
+            tau_g = np.zeros(4, dtype=float)
+            for j in range(4):
+                self.body[j].qi = qsave[j] + eps
+                self.position_calculation()
+                up = gravity_potential_energy()
+                self.body[j].qi = qsave[j] - eps
+                self.position_calculation()
+                um = gravity_potential_energy()
+                tau_g[j] = (up - um) / (2 * eps)
+                self.body[j].qi = qsave[j]
+            for i in range(4):
+                self.body[i].qi = qsave[i]
+            self.position_calculation()
+            return tau_g
+
+        self.read_data()
+
+        csv_path = (
+            Path(__file__).resolve().parent / "../recurdyn/rec_data_path.csv"
+        ).resolve()
+        rec_data_raw = np.loadtxt(csv_path, delimiter=",")
+        self.rec_data = rec_data_raw[:, 1:]
+
+        self.h = 0.001
+        self.g = -9.80665
+        self.t_e = 3.0
+        self.t_c = 0.0
+        self.index = 0
+        self.fp = open("python_data_vsd.csv", "w+")
+
+        wp_t = np.array([0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0], dtype=float)
+        wp_x = np.array([-0.35, -0.25, 0.25, 0.35, 0.18, -0.18, -0.35], dtype=float)
+        wp_y = np.array([0.15, -0.28, -0.28, 0.15, 0.37, 0.37, 0.15], dtype=float)
+        wp_z = np.array([-0.2, -0.2, -0.2, -0.2, 0.13, 0.13, -0.2], dtype=float)
+
+        stack_x = _path_build_full_quintic(wp_t, wp_x, self.h)
+        stack_y = _path_build_full_quintic(wp_t, wp_y, self.h)
+        stack_z = _path_build_full_quintic(wp_t, wp_z, self.h)
+        path_x = stack_x[:, 0]
+        path_vx = stack_x[:, 1]
+        path_y = stack_y[:, 0]
+        path_vy = stack_y[:, 1]
+        path_z = stack_z[:, 0]
+        path_vz = stack_z[:, 1]
+
+        print(
+            f"path len x/y/z : {len(path_x)}, {len(path_y)}, {len(path_z)}"
+        )
+
+        for i in range(4):
+            self.body[i].qi = float(self.rec_data[0, 31 + i])
+
+        Ks = np.array([15000.0, 15000.0, 15000.0, 1500.0, 1500.0], dtype=float)
+        Kd = np.array([1000.0, 1000.0, 1000.0, 10.0, 10.0], dtype=float)
+
+        while self.t_c < self.t_e:
+            des_pos = np.array(
+                [path_x[self.index], path_y[self.index], path_z[self.index]],
+                dtype=float,
+            )
+            des_roll = -np.pi / 2.0
+            des_pitch = 0.0
+            des_vel = np.array(
+                [
+                    path_vx[self.index],
+                    path_vy[self.index],
+                    path_vz[self.index],
+                    0.0,
+                    0.0,
+                ],
+                dtype=float,
+            )
+
+            self.position_calculation()
+            self.velocity_calculation()
+
+            ee = self.body[3]
+            err_pos = des_pos - ee.re
+            err_roll = wrap_to_pi(des_roll - float(ee.rpy[0]))
+            err_pitch = wrap_to_pi(des_pitch - float(ee.rpy[1]))
+            err = np.concatenate(
+                (err_pos, np.array([err_roll, err_pitch], dtype=float))
+            )
+
+            ev = np.zeros(5, dtype=float)
+            ev[0] = des_vel[0] - ee.dre[0]
+            ev[1] = des_vel[1] - ee.dre[1]
+            ev[2] = des_vel[2] - ee.dre[2]
+            ev[3] = des_vel[3] - ee.wi[0]
+            ev[4] = des_vel[4] - ee.wi[1]
+
+            J = self.jacobian_calculation()
+            Ke = Ks * err
+            Kv = Kd * ev
+            tau = J.T @ (Ke + Kv)
+            tau_g = joint_gravity_torque()
+            for i in range(4):
+                self.body[i].tau = (tau[i] + tau_g[i]) * self.body[i].gear
+
+            self.Y = self.define_Y_vector()
+
+            Y0 = self.Y.copy()
+            k1 = self.analysis(Y0)
+            k2 = self.analysis(Y0 + (self.h / 2) * k1)
+            k3 = self.analysis(Y0 + (self.h / 2) * k2)
+            k4 = self.analysis(Y0 + self.h * k3)
+            self.Y = Y0 + (self.h / 6) * (k1 + 2 * k2 + 2 * k3 + k4)
+
+            self.analysis()
+            self.data_save()
+
+            print(self.t_c)
+
+            self.t_c += self.h
+            self.index += 1
+
+        self.fp.close()
+
     def ik_task_error(self, des_pos, des_roll, des_pitch):
         """목표 위치·roll·pitch 대비 잔차 (5,) — 각도는 ``wrap_to_pi``."""
         ee = self.body[3]
@@ -445,82 +597,21 @@ class ControlMain:
         wp_t = np.array([0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0], dtype=float)
         wp_x = np.array([-0.35, -0.25, 0.25, 0.35, 0.18, -0.18, -0.35], dtype=float)
         wp_y = np.array([0.15, -0.28, -0.28, 0.15, 0.37, 0.37, 0.15], dtype=float)
-        wp_z = np.array([-0.2, 0.13, -0.2], dtype=float)
+        # C++ ``run_vsd`` / ``run_ik`` 와 동일한 7개 z 웨이포인트(잘못된 3원소 배열 제거).
+        wp_z = np.array([-0.2, -0.2, -0.2, -0.2, 0.13, 0.13, -0.2], dtype=float)
 
-        # --- 사다리꼴(트래페조이드) 속도 프로파일 (참고용, 비활성)
-        # ``path_generation(..., tf, ta, h)`` 에 ``full_quintic=False``(기본).
-        # 가·등·감속 3구간을 5차로 이음. ``ta`` = 가·감속 구간 시간 [s].
-        # path_ta = 0.1
-        # path_x1 = path_generation(wp_x[0], wp_x[1], wp_t[1] - wp_t[0], path_ta, self.h)[:-1]
-        # path_x2 = path_generation(wp_x[1], wp_x[2], wp_t[2] - wp_t[1], path_ta, self.h)[:-1]
-        # path_x3 = path_generation(wp_x[2], wp_x[3], wp_t[3] - wp_t[2], path_ta, self.h)[:-1]
-        # path_x4 = path_generation(wp_x[3], wp_x[4], wp_t[4] - wp_t[3], path_ta, self.h)[:-1]
-        # path_x5 = path_generation(wp_x[4], wp_x[5], wp_t[5] - wp_t[4], path_ta, self.h)[:-1]
-        # path_x6 = path_generation(wp_x[5], wp_x[6], wp_t[6] - wp_t[5], path_ta, self.h)
-        # path_x_stack = np.concatenate(
-        #     (path_x1, path_x2, path_x3, path_x4, path_x5, path_x6), axis=0
-        # )
-        # path_x = path_x_stack[:, 0]
-        # path_vx = path_x_stack[:, 1]
-        # path_ax = path_x_stack[:, 2]
-        # path_y1 = path_generation(wp_y[0], wp_y[1], wp_t[1] - wp_t[0], path_ta, self.h)[:-1]
-        # path_y2 = path_generation(wp_y[1], wp_y[2], wp_t[2] - wp_t[1], path_ta, self.h)[:-1]
-        # path_y3 = path_generation(wp_y[2], wp_y[3], wp_t[3] - wp_t[2], path_ta, self.h)[:-1]
-        # path_y4 = path_generation(wp_y[3], wp_y[4], wp_t[4] - wp_t[3], path_ta, self.h)[:-1]
-        # path_y5 = path_generation(wp_y[4], wp_y[5], wp_t[5] - wp_t[4], path_ta, self.h)[:-1]
-        # path_y6 = path_generation(wp_y[5], wp_y[6], wp_t[6] - wp_t[5], path_ta, self.h)
-        # path_y_stack = np.concatenate(
-        #     (path_y1, path_y2, path_y3, path_y4, path_y5, path_y6), axis=0
-        # )
-        # path_y = path_y_stack[:, 0]
-        # path_vy = path_y_stack[:, 1]
-        # path_ay = path_y_stack[:, 2]
-        # path_z1 = path_generation(wp_z[0], wp_z[0], wp_t[1] - wp_t[0], path_ta, self.h)[:-1]
-        # path_z2 = path_generation(wp_z[0], wp_z[0], wp_t[2] - wp_t[1], path_ta, self.h)[:-1]
-        # path_z3 = path_generation(wp_z[0], wp_z[0], wp_t[3] - wp_t[2], path_ta, self.h)[:-1]
-        # path_z4 = path_generation(wp_z[0], wp_z[1], wp_t[4] - wp_t[3], path_ta, self.h)[:-1]
-        # path_z5 = path_generation(wp_z[1], wp_z[1], wp_t[5] - wp_t[4], path_ta, self.h)[:-1]
-        # path_z6 = path_generation(wp_z[1], wp_z[2], wp_t[6] - wp_t[5], path_ta, self.h)
-        # path_z_stack = np.concatenate(
-        #     (path_z1, path_z2, path_z3, path_z4, path_z5, path_z6), axis=0
-        # )
-        # path_z = path_z_stack[:, 0]
-        # path_vz = path_z_stack[:, 1]
-        # path_az = path_z_stack[:, 2]
-
-        # 구간마다 휴지–휴지 단일 5차 다항 (`full_quintic=True`; ``ta`` 인자는 이 모드에서 미사용).
-        path_x1 = path_generation(wp_x[0], wp_x[1], wp_t[1] - wp_t[0], 0.0, self.h, full_quintic=True)[:-1]
-        path_x2 = path_generation(wp_x[1], wp_x[2], wp_t[2] - wp_t[1], 0.0, self.h, full_quintic=True)[:-1]
-        path_x3 = path_generation(wp_x[2], wp_x[3], wp_t[3] - wp_t[2], 0.0, self.h, full_quintic=True)[:-1]
-        path_x4 = path_generation(wp_x[3], wp_x[4], wp_t[4] - wp_t[3], 0.0, self.h, full_quintic=True)[:-1]
-        path_x5 = path_generation(wp_x[4], wp_x[5], wp_t[5] - wp_t[4], 0.0, self.h, full_quintic=True)[:-1]
-        path_x6 = path_generation(wp_x[5], wp_x[6], wp_t[6] - wp_t[5], 0.0, self.h, full_quintic=True)
-        path_x_stack = np.concatenate((path_x1, path_x2, path_x3, path_x4, path_x5, path_x6), axis=0)
-        path_x = path_x_stack[:, 0]
-        path_vx = path_x_stack[:, 1]
-        path_ax = path_x_stack[:, 2]
-
-        path_y1 = path_generation(wp_y[0], wp_y[1], wp_t[1] - wp_t[0], 0.0, self.h, full_quintic=True)[:-1]
-        path_y2 = path_generation(wp_y[1], wp_y[2], wp_t[2] - wp_t[1], 0.0, self.h, full_quintic=True)[:-1]
-        path_y3 = path_generation(wp_y[2], wp_y[3], wp_t[3] - wp_t[2], 0.0, self.h, full_quintic=True)[:-1]
-        path_y4 = path_generation(wp_y[3], wp_y[4], wp_t[4] - wp_t[3], 0.0, self.h, full_quintic=True)[:-1]
-        path_y5 = path_generation(wp_y[4], wp_y[5], wp_t[5] - wp_t[4], 0.0, self.h, full_quintic=True)[:-1]
-        path_y6 = path_generation(wp_y[5], wp_y[6], wp_t[6] - wp_t[5], 0.0, self.h, full_quintic=True)
-        path_y_stack = np.concatenate((path_y1, path_y2, path_y3, path_y4, path_y5, path_y6), axis=0)
-        path_y = path_y_stack[:, 0]
-        path_vy = path_y_stack[:, 1]
-        path_ay = path_y_stack[:, 2]
-
-        path_z1 = path_generation(wp_z[0], wp_z[0], wp_t[1] - wp_t[0], 0.0, self.h, full_quintic=True)[:-1]
-        path_z2 = path_generation(wp_z[0], wp_z[0], wp_t[2] - wp_t[1], 0.0, self.h, full_quintic=True)[:-1]
-        path_z3 = path_generation(wp_z[0], wp_z[0], wp_t[3] - wp_t[2], 0.0, self.h, full_quintic=True)[:-1]
-        path_z4 = path_generation(wp_z[0], wp_z[1], wp_t[4] - wp_t[3], 0.0, self.h, full_quintic=True)[:-1]
-        path_z5 = path_generation(wp_z[1], wp_z[1], wp_t[5] - wp_t[4], 0.0, self.h, full_quintic=True)[:-1]
-        path_z6 = path_generation(wp_z[1], wp_z[2], wp_t[6] - wp_t[5], 0.0, self.h, full_quintic=True)
-        path_z_stack = np.concatenate((path_z1, path_z2, path_z3, path_z4, path_z5, path_z6), axis=0)
-        path_z = path_z_stack[:, 0]
-        path_vz = path_z_stack[:, 1]
-        path_az = path_z_stack[:, 2]
+        stack_x = _path_build_full_quintic(wp_t, wp_x, self.h)
+        stack_y = _path_build_full_quintic(wp_t, wp_y, self.h)
+        stack_z = _path_build_full_quintic(wp_t, wp_z, self.h)
+        path_x = stack_x[:, 0]
+        path_vx = stack_x[:, 1]
+        path_ax = stack_x[:, 2]
+        path_y = stack_y[:, 0]
+        path_vy = stack_y[:, 1]
+        path_ay = stack_y[:, 2]
+        path_z = stack_z[:, 0]
+        path_vz = stack_z[:, 1]
+        path_az = stack_z[:, 2]
 
         n_rec = self.rec_data.shape[0]
         print(
@@ -590,4 +681,5 @@ if __name__ == "__main__":
     main = ControlMain()
     # main.simple_run()
     # main.run()
-    main.run_ik()
+    # main.run_ik()
+    main.run_vsd()
