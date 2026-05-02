@@ -442,7 +442,29 @@ class ControlMain:
 
         self.fp.close()
 
-    def run_vsd(self):
+    def run_vsd(
+        self,
+        integrate_with_mujoco=False,
+        mujoco_model_path=None,
+        *,
+        mujoco_pd_scale=1.2,
+        mujoco_tau_limit=1200.0,
+        mujoco_gravity_comp=True,
+    ):
+        """
+        작업 공간 PD 및 상태 적분.
+
+        - ``integrate_with_mujoco=False`` (기본): 해석 역학 ``analysis`` + RK4 (기존).
+        - ``integrate_with_mujoco=True``: PD 토크 ``J.T@(Ks*e + Kd*ev)`` 에 (옵션) MuJoCo 기준
+          중력 보상을 더한 뒤 모터에 넣고 ``mj_step`` 으로 적분. 중력 보상은 현재 관절 상태에서
+          ``qvel`` 을 0으로 둔 채 ``mj_forward`` 후 ``qfrc_bias`` 를 사용한다 (속도 0이면
+          코리올리스 없이 일반화 중력에 해당).
+
+        해석 모델과 MuJoCo primitive 의 질량·관성이 달라 동일 Ks/Kd 는 관절 토크가 과도해지기
+        쉬우므로 ``mujoco_pd_scale`` 로 스케일하고 ``mujoco_tau_limit`` [Nm] 로 제한한다.
+
+        ``mujoco_model_path`` 미지정 시 ``mujoco_pmi_viz/models/pmi_arm_primitive_actuated.xml``.
+        """
         def gravity_potential_energy():
             U = 0.0
             for i in range(4):
@@ -507,6 +529,35 @@ class ControlMain:
         Ks = np.array([15000.0, 15000.0, 15000.0, 1500.0, 1500.0], dtype=float)
         Kd = np.array([1000.0, 1000.0, 1000.0, 10.0, 10.0], dtype=float)
 
+        mj_model = None
+        mj_data = None
+        if integrate_with_mujoco:
+            try:
+                import mujoco
+            except ImportError as exc:
+                raise ImportError(
+                    "integrate_with_mujoco=True 인 경우 `pip install mujoco` 가 필요합니다."
+                ) from exc
+            if mujoco_model_path is not None:
+                mj_xml = Path(mujoco_model_path).resolve()
+            else:
+                # main.py 위치: <프로젝트루트>/analysis/python/main.py → 루트는 parents[2]
+                mj_xml = (
+                    Path(__file__).resolve().parents[2]
+                    / "mujoco_pmi_viz/models/pmi_arm_primitive_actuated.xml"
+                ).resolve()
+            if not mj_xml.is_file():
+                raise FileNotFoundError(f"MuJoCo 모델 파일 없음: {mj_xml}")
+            mj_model = mujoco.MjModel.from_xml_path(str(mj_xml))
+            mj_model.opt.timestep = float(self.h)
+            mj_data = mujoco.MjData(mj_model)
+            if mj_model.nu != 4:
+                raise RuntimeError(f"MuJoCo 모델 nu가 4가 아님: nu={mj_model.nu}")
+            for i in range(4):
+                mj_data.qpos[i] = float(self.body[i].qi)
+                mj_data.qvel[i] = float(self.body[i].dqi)
+            mujoco.mj_forward(mj_model, mj_data)
+
         while self.t_c < self.t_e:
             des_pos = np.array(
                 [path_x[self.index], path_y[self.index], path_z[self.index]],
@@ -547,20 +598,60 @@ class ControlMain:
             Ke = Ks * err
             Kv = Kd * ev
             tau = J.T @ (Ke + Kv)
-            tau_g = joint_gravity_torque()
-            for i in range(4):
-                self.body[i].tau = (tau[i] + tau_g[i]) * self.body[i].gear
 
-            self.Y = self.define_Y_vector()
+            if integrate_with_mujoco:
+                if mujoco_gravity_comp:
+                    v_save = mj_data.qvel.copy()
+                    mj_data.qvel[:] = 0.0
+                    mujoco.mj_forward(mj_model, mj_data)
+                    tau_grav = np.asarray(
+                        mj_data.qfrc_bias[: mj_model.nv], dtype=float
+                    ).copy()
+                    mj_data.qvel[:] = v_save
+                    mujoco.mj_forward(mj_model, mj_data)
+                    tau_pd_g = tau + tau_grav
+                else:
+                    tau_pd_g = tau
+                tau_cmd = tau_pd_g * float(mujoco_pd_scale)
+                tau_cmd = np.clip(
+                    tau_cmd,
+                    -float(mujoco_tau_limit),
+                    float(mujoco_tau_limit),
+                )
+                mj_data.ctrl[:] = tau_cmd
+                mujoco.mj_step(mj_model, mj_data)
+                if not (
+                    np.all(np.isfinite(mj_data.qpos))
+                    and np.all(np.isfinite(mj_data.qvel))
+                    and np.all(np.isfinite(mj_data.qacc))
+                ):
+                    raise RuntimeError(
+                        f"MuJoCo 상태가 NaN/Inf로 발산했습니다 (t={self.t_c}). "
+                        "mujoco_pd_scale 를 더 줄이거나 mujoco_tau_limit 를 낮추세요."
+                    )
+                for i in range(4):
+                    self.body[i].qi = float(mj_data.qpos[i])
+                    self.body[i].dqi = float(mj_data.qvel[i])
+                    self.body[i].ddqi = float(mj_data.qacc[i])
+                    self.body[i].tau = float(tau_cmd[i]) * self.body[i].gear
+                self.position_calculation()
+                self.velocity_calculation()
+            else:
+                tau_g = joint_gravity_torque()
+                for i in range(4):
+                    self.body[i].tau = (tau[i] + tau_g[i]) * self.body[i].gear
 
-            Y0 = self.Y.copy()
-            k1 = self.analysis(Y0)
-            k2 = self.analysis(Y0 + (self.h / 2) * k1)
-            k3 = self.analysis(Y0 + (self.h / 2) * k2)
-            k4 = self.analysis(Y0 + self.h * k3)
-            self.Y = Y0 + (self.h / 6) * (k1 + 2 * k2 + 2 * k3 + k4)
+                self.Y = self.define_Y_vector()
 
-            self.analysis()
+                Y0 = self.Y.copy()
+                k1 = self.analysis(Y0)
+                k2 = self.analysis(Y0 + (self.h / 2) * k1)
+                k3 = self.analysis(Y0 + (self.h / 2) * k2)
+                k4 = self.analysis(Y0 + self.h * k3)
+                self.Y = Y0 + (self.h / 6) * (k1 + 2 * k2 + 2 * k3 + k4)
+
+                self.analysis()
+
             self.data_save()
 
             print(self.t_c)
@@ -682,4 +773,5 @@ if __name__ == "__main__":
     # main.simple_run()
     # main.run()
     # main.run_ik()
-    main.run_vsd()
+    # main.run_vsd()
+    main.run_vsd(integrate_with_mujoco=True, mujoco_gravity_comp=True)  # pip install mujoco

@@ -299,38 +299,38 @@ def run_all_plots(
     written.append(p)
 
     # 2) 엔드 이펙터 속도
-    ylabels_vel = [
-        "v_x (m/s)",
-        "v_y (m/s)",
-        "v_z (m/s)",
-        r"$\omega_x$ (rad/s)",
-        r"$\omega_y$ (rad/s)",
-        r"$\omega_z$ (rad/s)",
-    ]
-    titles_vel = [
-        "End-Effector Linear Velocity v_x",
-        "End-Effector Linear Velocity v_y",
-        "End-Effector Linear Velocity v_z",
-        r"End-Effector Angular Velocity $\omega_x$",
-        r"End-Effector Angular Velocity $\omega_y$",
-        r"End-Effector Angular Velocity $\omega_z$",
-    ]
-    p = output_dir / f"{file_stem}_ee_velocity.png"
-    plot_figure_2x3(
-        t_py,
-        py,
-        t_rd,
-        rd,
-        INDEX_END_VEL,
-        p,
-        f"End-effector velocity",
-        ylabels_vel,
-        titles_vel,
-        dpi,
-        legend_subplot_idx=2,
-        show=show,
-    )
-    written.append(p)
+    # ylabels_vel = [
+    #     "v_x (m/s)",
+    #     "v_y (m/s)",
+    #     "v_z (m/s)",
+    #     r"$\omega_x$ (rad/s)",
+    #     r"$\omega_y$ (rad/s)",
+    #     r"$\omega_z$ (rad/s)",
+    # ]
+    # titles_vel = [
+    #     "End-Effector Linear Velocity v_x",
+    #     "End-Effector Linear Velocity v_y",
+    #     "End-Effector Linear Velocity v_z",
+    #     r"End-Effector Angular Velocity $\omega_x$",
+    #     r"End-Effector Angular Velocity $\omega_y$",
+    #     r"End-Effector Angular Velocity $\omega_z$",
+    # ]
+    # p = output_dir / f"{file_stem}_ee_velocity.png"
+    # plot_figure_2x3(
+    #     t_py,
+    #     py,
+    #     t_rd,
+    #     rd,
+    #     INDEX_END_VEL,
+    #     p,
+    #     f"End-effector velocity",
+    #     ylabels_vel,
+    #     titles_vel,
+    #     dpi,
+    #     legend_subplot_idx=2,
+    #     show=show,
+    # )
+    # written.append(p)
 
     # # 3) 엔드 이펙터 가속도
     # ylabels_acc = [
@@ -366,23 +366,23 @@ def run_all_plots(
     # )
     # written.append(p)
 
-    # 4) 모터 각도 q_act
-    p = output_dir / f"{file_stem}_motor_angle.png"
-    plot_figure_2x2(
-        t_py,
-        py,
-        t_rd,
-        rd,
-        INDEX_Q_ACT,
-        p,
-        f"Motor angle",
-        [f"q_{i} (rad)" for i in range(1, 5)],
-        [f"Motor Angle q_{i}" for i in range(1, 5)],
-        dpi,
-        legend_subplot_idx=1,
-        show=show,
-    )
-    written.append(p)
+    # # 4) 모터 각도 q_act
+    # p = output_dir / f"{file_stem}_motor_angle.png"
+    # plot_figure_2x2(
+    #     t_py,
+    #     py,
+    #     t_rd,
+    #     rd,
+    #     INDEX_Q_ACT,
+    #     p,
+    #     f"Motor angle",
+    #     [f"q_{i} (rad)" for i in range(1, 5)],
+    #     [f"Motor Angle q_{i}" for i in range(1, 5)],
+    #     dpi,
+    #     legend_subplot_idx=1,
+    #     show=show,
+    # )
+    # written.append(p)
 
     # 5) 관절 각도 q
     p = output_dir / f"{file_stem}_joint_angle.png"
@@ -402,41 +402,41 @@ def run_all_plots(
     )
     written.append(p)
 
-    # 6) 모터 각속도 dq_act
-    p = output_dir / f"{file_stem}_motor_velocity.png"
-    plot_figure_2x2(
-        t_py,
-        py,
-        t_rd,
-        rd,
-        INDEX_DQ_ACT,
-        p,
-        f"Motor angle velocity",
-        [f"dq_{i} act (rad/s)" for i in range(1, 5)],
-        [f"Motor Angle Velocity dq_{i}_act" for i in range(1, 5)],
-        dpi,
-        legend_subplot_idx=1,
-        show=show,
-    )
-    written.append(p)
+    # # 6) 모터 각속도 dq_act
+    # p = output_dir / f"{file_stem}_motor_velocity.png"
+    # plot_figure_2x2(
+    #     t_py,
+    #     py,
+    #     t_rd,
+    #     rd,
+    #     INDEX_DQ_ACT,
+    #     p,
+    #     f"Motor angle velocity",
+    #     [f"dq_{i} act (rad/s)" for i in range(1, 5)],
+    #     [f"Motor Angle Velocity dq_{i}_act" for i in range(1, 5)],
+    #     dpi,
+    #     legend_subplot_idx=1,
+    #     show=show,
+    # )
+    # written.append(p)
 
-    # 7) 관절 각속도 dq
-    p = output_dir / f"{file_stem}_joint_velocity.png"
-    plot_figure_2x2(
-        t_py,
-        py,
-        t_rd,
-        rd,
-        INDEX_DQ,
-        p,
-        f"Joint angle velocity",
-        [f"dq_{i} (rad/s)" for i in range(1, 5)],
-        [f"Joint Angle Velocity dq_{i}" for i in range(1, 5)],
-        dpi,
-        legend_subplot_idx=1,
-        show=show,
-    )
-    written.append(p)
+    # # 7) 관절 각속도 dq
+    # p = output_dir / f"{file_stem}_joint_velocity.png"
+    # plot_figure_2x2(
+    #     t_py,
+    #     py,
+    #     t_rd,
+    #     rd,
+    #     INDEX_DQ,
+    #     p,
+    #     f"Joint angle velocity",
+    #     [f"dq_{i} (rad/s)" for i in range(1, 5)],
+    #     [f"Joint Angle Velocity dq_{i}" for i in range(1, 5)],
+    #     dpi,
+    #     legend_subplot_idx=1,
+    #     show=show,
+    # )
+    # written.append(p)
 
     # # 8) 모터 각가속도 ddq_act (plotting.m 172행 루프의 index 오류 보정)
     # p = output_dir / f"{file_stem}_motor_acceleration.png"

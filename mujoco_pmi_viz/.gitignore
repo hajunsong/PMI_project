@@ -1,0 +1,9 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 녹화·비교 플롯 산출물 (저장소에는 소스·MJCF만 유지)
+*.mp4
+ee_compare*.png

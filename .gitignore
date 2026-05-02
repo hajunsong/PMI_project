@@ -121,3 +121,14 @@ pmi_mujoco_rl/htmlcov/
 pmi_mujoco_rl/.tox/
 pmi_mujoco_rl/outputs/
 pmi_mujoco_rl/**/*.mp4
+
+# MuJoCo 가시화·궤적 재생 (mujoco_pmi_viz: venv, 녹화·비교 산출물)
+mujoco_pmi_viz/.venv/
+mujoco_pmi_viz/venv/
+mujoco_pmi_viz/**/__pycache__/
+mujoco_pmi_viz/**/*.py[cod]
+mujoco_pmi_viz/**/$py.class
+mujoco_pmi_viz/**/*.mp4
+mujoco_pmi_viz/**/ee_compare*.png
+mujoco_pmi_viz/.pytest_cache/
+mujoco_pmi_viz/.mypy_cache/

@@ -1,0 +1,44 @@
+<?xml version="1.0" ?>
+<!-- PMI 4-DOF arm — URDF와 동일 링크·조인트 트리. STL은 meshdir 기준으로 로드. -->
+<mujoco model="pmi_arm_mesh">
+  <compiler angle="radian" meshdir="../../ros_ws/pmi_description/meshes" autolimits="true"/>
+  <option gravity="0 0 -9.80665" integrator="RK4"/>
+  <asset>
+    <mesh name="base_link_mesh" file="base_link.STL"/>
+    <mesh name="link1_mesh" file="link1.STL"/>
+    <mesh name="link2_mesh" file="link2.STL"/>
+    <mesh name="link3_mesh" file="link3.STL"/>
+    <mesh name="link4_mesh" file="link4.STL"/>
+    <material name="base_mat" rgba="0.79 0.82 0.93 1"/>
+    <material name="link1_mat" rgba="0.69 0.72 0.83 1"/>
+    <material name="link2_mat" rgba="0.59 0.62 0.73 1"/>
+    <material name="link3_mat" rgba="0.49 0.52 0.63 1"/>
+    <material name="link4_mat" rgba="0.39 0.42 0.53 1"/>
+  </asset>
+  <worldbody>
+    <body name="base_link" pos="0 0 0">
+      <geom name="base_geom" type="mesh" mesh="base_link_mesh" material="base_mat" contype="0" conaffinity="0"/>
+      <!-- jnt1: URDF origin rpy="pi 0 0" -->
+      <body name="link1" pos="0 0 0" euler="3.1416 0 0">
+        <joint name="jnt1" type="hinge" axis="0 0 1" damping="0.1"/>
+        <geom name="link1_geom" type="mesh" mesh="link1_mesh" material="link1_mat" contype="0" conaffinity="0"/>
+        <!-- jnt2 -->
+        <body name="link2" pos="0 0 -0.22" euler="1.5708 0 0">
+          <joint name="jnt2" type="hinge" axis="0 0 1" damping="0.1"/>
+          <geom name="link2_geom" type="mesh" mesh="link2_mesh" material="link2_mat" contype="0" conaffinity="0"/>
+          <!-- jnt3 -->
+          <body name="link3" pos="0 -0.23 0" euler="0 0 -1.5708">
+            <joint name="jnt3" type="hinge" axis="0 0 1" damping="0.1"/>
+            <geom name="link3_geom" type="mesh" mesh="link3_mesh" material="link3_mat" contype="0" conaffinity="0"/>
+            <!-- jnt4 -->
+            <body name="link4" pos="0.23 0 0" euler="-3.1416 0 0">
+              <joint name="jnt4" type="hinge" axis="0 0 1" damping="0.1"/>
+              <geom name="link4_geom" type="mesh" mesh="link4_mesh" material="link4_mat" contype="0" conaffinity="0"/>
+              <site name="ee" pos="0.18 0 0" size="0.012" rgba="1 0.3 0.3 1"/>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+</mujoco>
