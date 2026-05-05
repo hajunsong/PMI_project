@@ -132,3 +132,12 @@ mujoco_pmi_viz/**/*.mp4
 mujoco_pmi_viz/**/ee_compare*.png
 mujoco_pmi_viz/.pytest_cache/
 mujoco_pmi_viz/.mypy_cache/
+
+# 강화학습 실험 (rl_pmi)
+rl_pmi/.venv/
+rl_pmi/venv/
+rl_pmi/**/__pycache__/
+rl_pmi/**/*.py[cod]
+rl_pmi/checkpoints/
+rl_pmi/tensorboard_logs/
+rl_pmi/*.zip

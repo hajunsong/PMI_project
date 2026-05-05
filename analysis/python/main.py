@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
+import sys
 from pathlib import Path
+from typing import Any, Optional
 
 import numpy as np
 
@@ -661,6 +663,211 @@ class ControlMain:
 
         self.fp.close()
 
+    def run_vsd_sac(
+        self,
+        sac_model_path: Path,
+        *,
+        integrate_with_mujoco: bool = True,
+        mujoco_model_path: Optional[Path] = None,
+        pmi_env_kwargs: Optional[dict[str, Any]] = None,
+        device: str = "cpu",
+        deterministic_policy: bool = True,
+        csv_filename: str = "python_data_vsd_sac.csv",
+        print_metrics_every_s: float = 0.5,
+    ):
+        """
+        ``run_vsd(..., integrate_with_mujoco=True)`` 와 동일한 기준 궤적·시간 그리드에서,
+        학습된 SAC 잔여 ΔF 를 더한 제어로 MuJoCo 적분하고 CSV를 저장한다.
+
+        물리·관측은 ``rl_pmi/envs/pmi_track_env.PMITrackEnv`` 와 동일해야 하므로,
+        ``pmi_env_kwargs`` 는 학습 시 ``train_sac.py`` 에 넘긴 옵션과 맞출 것
+        (특히 ``tau_limit``, ``delta_f_scale``, ``ks``/``kd``, 중력 FF).
+
+        필요 패키지: ``stable-baselines3``, ``torch``, ``gymnasium``
+        (``rl_pmi/requirements.txt`` 참고).
+
+        사용 예::
+
+            from pathlib import Path
+            main = ControlMain()
+            main.run_vsd_sac(
+                Path("../rl_pmi/checkpoints/sac_pmi_track.zip"),
+                pmi_env_kwargs={
+                    "tau_limit": 500.0,
+                    "delta_f_scale": np.array([50, 50, 50, 25, 25], dtype=float),
+                    "w_pos": 2.0,
+                    "reset_noise": 0.03,
+                },
+            )
+        """
+        if not integrate_with_mujoco:
+            raise ValueError("run_vsd_sac 는 MuJoCo 적분 경로만 지원합니다 (integrate_with_mujoco=True).")
+
+        project_root = Path(__file__).resolve().parents[2]
+        rl_pmi_root = project_root / "rl_pmi"
+        if str(rl_pmi_root) not in sys.path:
+            sys.path.insert(0, str(rl_pmi_root))
+
+        try:
+            import mujoco
+            from stable_baselines3 import SAC
+        except ImportError as exc:
+            raise ImportError(
+                "run_vsd_sac 에는 mujoco, stable-baselines3, torch 가 필요합니다. "
+                f"예: pip install -r {rl_pmi_root / 'requirements.txt'}"
+            ) from exc
+
+        from envs.pmi_track_env import PMITrackEnv
+
+        sac_model_path = Path(sac_model_path).resolve()
+        if not sac_model_path.is_file():
+            raise FileNotFoundError(f"SAC 체크포인트 없음: {sac_model_path}")
+
+        pmi_kw = dict(pmi_env_kwargs or {})
+        env = PMITrackEnv(**pmi_kw)
+        model = SAC.load(str(sac_model_path), device=device)
+
+        self.read_data()
+
+        csv_path = (
+            Path(__file__).resolve().parent / "../recurdyn/rec_data_path.csv"
+        ).resolve()
+        rec_data_raw = np.loadtxt(csv_path, delimiter=",")
+        self.rec_data = rec_data_raw[:, 1:]
+
+        self.h = 0.001
+        self.g = -9.80665
+        self.t_e = 3.0
+        self.t_c = 0.0
+        self.index = 0
+        out_path = Path(__file__).resolve().parent / csv_filename
+        self.fp = open(out_path, "w+")
+
+        wp_t = np.array([0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0], dtype=float)
+        wp_x = np.array([-0.35, -0.25, 0.25, 0.35, 0.18, -0.18, -0.35], dtype=float)
+        wp_y = np.array([0.15, -0.28, -0.28, 0.15, 0.37, 0.37, 0.15], dtype=float)
+        wp_z = np.array([-0.2, -0.2, -0.2, -0.2, 0.13, 0.13, -0.2], dtype=float)
+
+        stack_x = _path_build_full_quintic(wp_t, wp_x, self.h)
+        stack_y = _path_build_full_quintic(wp_t, wp_y, self.h)
+        stack_z = _path_build_full_quintic(wp_t, wp_z, self.h)
+        path_x = stack_x[:, 0]
+        path_y = stack_y[:, 0]
+        path_z = stack_z[:, 0]
+
+        print(
+            f"[run_vsd_sac] path len x/y/z : {len(path_x)}, {len(path_y)}, {len(path_z)} | "
+            f"model={sac_model_path.name}"
+        )
+
+        if mujoco_model_path is not None:
+            mj_xml = Path(mujoco_model_path).resolve()
+        else:
+            mj_xml = (
+                project_root / "mujoco_pmi_viz/models/pmi_arm_primitive_actuated.xml"
+            ).resolve()
+        if not mj_xml.is_file():
+            raise FileNotFoundError(f"MuJoCo 모델 파일 없음: {mj_xml}")
+
+        mj_model = mujoco.MjModel.from_xml_path(str(mj_xml))
+        mj_model.opt.timestep = float(self.h)
+        mj_data = mujoco.MjData(mj_model)
+        if mj_model.nu != 4:
+            raise RuntimeError(f"MuJoCo 모델 nu가 4가 아님: nu={mj_model.nu}")
+
+        # 환경 모델과 동일 XML 인지 확인 (정책·토크 일관성)
+        if Path(env.mjcf_path).resolve() != mj_xml.resolve():
+            print(
+                f"경고: PMITrackEnv mjcf({env.mjcf_path}) 와 시뮬 XML({mj_xml}) 경로가 다릅니다.",
+                file=sys.stderr,
+            )
+
+        for i in range(4):
+            qi0 = float(self.rec_data[0, 31 + i])
+            mj_data.qpos[i] = qi0
+            env.data.qpos[i] = qi0
+        mj_data.qvel[:] = 0.0
+        env.data.qvel[:] = 0.0
+        mujoco.mj_forward(mj_model, mj_data)
+        mujoco.mj_forward(env.model, env.data)
+
+        sum_tracking = 0.0
+        sum_err_pos = 0.0
+        n_steps = 0
+        next_metric_t = 0.0
+
+        while self.t_c < self.t_e:
+            env.data.qpos[:] = mj_data.qpos[: mj_model.nq]
+            env.data.qvel[:] = mj_data.qvel[: mj_model.nv]
+            mujoco.mj_forward(env.model, env.data)
+
+            obs = env.get_observation(self.index)
+            action, _states = model.predict(
+                obs, deterministic=deterministic_policy
+            )
+
+            tau_cmd = env.compute_actuator_torque(action)
+            mj_data.ctrl[:] = tau_cmd
+            mujoco.mj_step(mj_model, mj_data)
+
+            if not (
+                np.all(np.isfinite(mj_data.qpos))
+                and np.all(np.isfinite(mj_data.qvel))
+            ):
+                raise RuntimeError(
+                    f"MuJoCo 상태가 NaN/Inf로 발산했습니다 (t={self.t_c}). "
+                    "tau_limit·체크포인트·학습 하이퍼파라미터를 확인하세요."
+                )
+
+            env.data.qpos[:] = mj_data.qpos[: mj_model.nq]
+            env.data.qvel[:] = mj_data.qvel[: mj_model.nv]
+            mujoco.mj_forward(env.model, env.data)
+            env._step_idx = self.index + 1
+            m = env.tracking_metrics()
+            sum_tracking += m["tracking_cost"]
+            sum_err_pos += m["err_pos_norm"]
+            n_steps += 1
+
+            for i in range(4):
+                self.body[i].qi = float(mj_data.qpos[i])
+                self.body[i].dqi = float(mj_data.qvel[i])
+                self.body[i].ddqi = float(mj_data.qacc[i])
+                self.body[i].tau = float(tau_cmd[i]) * self.body[i].gear
+            self.position_calculation()
+            self.velocity_calculation()
+
+            self.data_save()
+
+            if self.t_c + 1e-12 >= next_metric_t:
+                print(
+                    f"  t={self.t_c:.3f}  "
+                    f"track_cost(step)={m['tracking_cost']:.6f}  "
+                    f"err_pos_norm={m['err_pos_norm']:.5f}"
+                )
+                next_metric_t += print_metrics_every_s
+
+            print(self.t_c)
+
+            self.t_c += self.h
+            self.index += 1
+
+        self.fp.close()
+
+        mean_track = sum_tracking / max(n_steps, 1)
+        mean_err = sum_err_pos / max(n_steps, 1)
+        print("---")
+        print(
+            f"[run_vsd_sac] 완료: CSV={out_path} | "
+            f"mean tracking_cost={mean_track:.6f} | "
+            f"mean err_pos_norm={mean_err:.5f} | "
+            f"steps={n_steps}"
+        )
+        print(
+            "동일 조건 PD-only 결과와 비교하려면 "
+            "`run_vsd(integrate_with_mujoco=True)` 의 CSV·위 지표와 대조하세요."
+        )
+        env.close()
+
     def ik_task_error(self, des_pos, des_roll, des_pitch):
         """목표 위치·roll·pitch 대비 잔차 (5,) — 각도는 ``wrap_to_pi``."""
         ee = self.body[3]
@@ -769,9 +976,80 @@ class ControlMain:
         self.fp.close()
 
 if __name__ == "__main__":
+    import argparse
+
+    _here = Path(__file__).resolve().parent
+    _project = _here.parents[1]
+    _rl_pmi = _project / "rl_pmi"
+
+    parser = argparse.ArgumentParser(
+        description="ControlMain: 해석/ MuJoCo 시뮬 또는 SAC 학습 정책 검증 (run_vsd_sac)."
+    )
+    parser.add_argument(
+        "--sac-model",
+        type=Path,
+        default=None,
+        help="rl_pmi SAC .zip 경로. 지정 시 run_vsd_sac (학습과 동일 PMITrackEnv kwargs 권장).",
+    )
+    parser.add_argument(
+        "--tau-limit",
+        type=float,
+        default=600.0,
+        help="PMITrackEnv 토크 클립 [Nm] (train_sac.py 와 동일하게)",
+    )
+    parser.add_argument(
+        "--delta-f-scale",
+        metavar="F0,F1,F2,F3,F4",
+        default=None,
+        help="ΔF 스케일 5개 쉼표 구분 (학습 시와 동일)",
+    )
+    parser.add_argument(
+        "--w-pos",
+        type=float,
+        default=1.0,
+        help="보상 가중 w_pos (추적 지표 정의용; 학습과 맞출 것)",
+    )
+    parser.add_argument(
+        "--reset-noise",
+        type=float,
+        default=0.05,
+        help="학습 분포와 맞추기 위한 환경 파라미터 (run_vsd_sac 롤아웃 초기값만 rec_data 사용)",
+    )
+    parser.add_argument(
+        "--no-gravity-ff",
+        action="store_true",
+        help="PMITrackEnv 중력 feedforward 끔",
+    )
+    parser.add_argument(
+        "--sac-device",
+        default="cpu",
+        help="SAC.load(..., device=)",
+    )
+    args = parser.parse_args()
+
     main = ControlMain()
-    # main.simple_run()
-    # main.run()
-    # main.run_ik()
-    # main.run_vsd()
-    main.run_vsd(integrate_with_mujoco=True, mujoco_gravity_comp=True)  # pip install mujoco
+    if args.sac_model is not None:
+        if str(_rl_pmi) not in sys.path:
+            sys.path.insert(0, str(_rl_pmi))
+        from env_args import parse_optional_float5
+
+        sac_kw: dict[str, Any] = {
+            "tau_limit": args.tau_limit,
+            "use_gravity_feedforward": not args.no_gravity_ff,
+            "w_pos": args.w_pos,
+            "reset_noise": args.reset_noise,
+        }
+        dfs = parse_optional_float5(args.delta_f_scale)
+        if dfs is not None:
+            sac_kw["delta_f_scale"] = dfs
+        main.run_vsd_sac(
+            args.sac_model.resolve(),
+            pmi_env_kwargs=sac_kw,
+            device=args.sac_device,
+        )
+    else:
+        # main.simple_run()
+        # main.run()
+        # main.run_ik()
+        # main.run_vsd()
+        main.run_vsd(integrate_with_mujoco=True, mujoco_gravity_comp=True)  # pip install mujoco
