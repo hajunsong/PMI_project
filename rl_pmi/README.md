@@ -14,18 +14,23 @@
 
 ## 설치
 
+가상환경은 **저장소 루트 (`PMI/`)** 에 하나만 둡니다. 통합 의존성은 루트 `requirements.txt` 를 사용합니다.
+
 ```bash
-cd rl_pmi
+cd /path/to/PMI
 python3 -m venv .venv
-./.venv/bin/pip install -r requirements.txt
+.venv/bin/pip install -U pip
+.venv/bin/pip install -r requirements.txt
 ```
+
+이후 아래 예시는 모두 **`rl_pmi` 디렉터리**에서 실행한다고 가정하고, 인터프리터는 `../.venv/bin/python` 을 씁니다. (저장소 루트에 서 있으면 `./.venv/bin/python rl_pmi/train_sac.py` 형태도 가능합니다.)
 
 ## 학습
 
 기본은 **SAC** (잔여 작업공간 \(\Delta F\) + 선택적 \(\|\Delta\tau_{RL}\|^2\) 페널티). 온폴리시 비교용으로 PPO 스크립트도 유지합니다.
 
 ```bash
-./.venv/bin/python train_sac.py
+../.venv/bin/python train_sac.py
 ```
 
 - 기본 **`--timesteps 500000`**, **`--learning-starts 10000`**, 리플레이 **`--buffer-size 1000000`** (RAM 부족 시 `500000` 등으로 줄이기).
@@ -37,13 +42,13 @@ python3 -m venv .venv
 
 ```bash
 # 더 길게 + 작은 초기 노이즈(평가 분포와 맞추려면 학습·run_policy 모두 같은 값)
-./.venv/bin/python train_sac.py --timesteps 1000000 --reset-noise 0.03
+../.venv/bin/python train_sac.py --timesteps 1000000 --reset-noise 0.03
 
 # ΔF 스케일 축소 → 잔여력 보수적 (진동 줄이기 시도)
-./.venv/bin/python train_sac.py --delta-f-scale "50,50,50,25,25"
+../.venv/bin/python train_sac.py --delta-f-scale "50,50,50,25,25"
 
 # 위치 추적 더 중시, 행동 페널티 완화
-./.venv/bin/python train_sac.py --w-pos 2.0 --action-penalty 5e-5 --tau-limit 500
+../.venv/bin/python train_sac.py --w-pos 2.0 --action-penalty 5e-5 --tau-limit 500
 ```
 
 학습에 준 **`PMITrackEnv` 관련 인자는 평가 시에도 동일하게** 넘겨야 합니다.
@@ -56,7 +61,7 @@ Stable-Baselines3가 `rl_pmi/tensorboard_logs/` 에 스칼라 로그(보상, 손
 
 ```bash
 cd rl_pmi
-./.venv/bin/tensorboard --logdir tensorboard_logs --port 6006
+../.venv/bin/tensorboard --logdir tensorboard_logs --port 6006
 ```
 
 브라우저에서 **`http://localhost:6006`** (또는 `http://127.0.0.1:6006`) 을 열면 됩니다.  
@@ -65,7 +70,7 @@ cd rl_pmi
 연결이 안 되면 TensorBoard를 모든 인터페이스에 바인딩합니다:
 
 ```bash
-./.venv/bin/tensorboard --logdir tensorboard_logs --port 6006 --bind_all
+../.venv/bin/tensorboard --logdir tensorboard_logs --port 6006 --bind_all
 ```
 
 그래도 안 되면 WSL의 IP를 확인합니다 (WSL 안에서):
@@ -85,7 +90,7 @@ Windows 브라우저에서 **`http://<위_IP>:6006`** 으로 접속합니다 (�
 PPO만 돌릴 때 (기본 50만 스텝, 환경 인자는 SAC와 동일):
 
 ```bash
-./.venv/bin/python train_ppo.py
+../.venv/bin/python train_ppo.py
 ```
 
 ## 영상 가시화
@@ -93,14 +98,14 @@ PPO만 돌릴 때 (기본 50만 스텝, 환경 인자는 SAC와 동일):
 - **학습 중:** Stable-Baselines3 `VecVideoRecorder`로 주기적으로 mp4 저장 (`moviepy`, 시스템에 **ffmpeg** 권장).
 
 ```bash
-./.venv/bin/python train_sac.py --record-video \\
+../.venv/bin/python train_sac.py --record-video \\
   --video-folder videos/train --video-freq 50000 --video-length 400
 ```
 
 - **학습 후 (체크포인트 한 에피소드):**
 
 ```bash
-./.venv/bin/python record_eval_video.py --model checkpoints/sac_pmi_track.zip --out videos/eval.mp4
+../.venv/bin/python record_eval_video.py --model checkpoints/sac_pmi_track.zip --out videos/eval.mp4
 ```
 
 `PMITrackEnv`는 `render_mode="rgb_array"`일 때 MuJoCo `Renderer`로 프레임을 뽑습니다. `MUJOCO_GL=egl` 등은 서버/헤드리스와 동일하게 환경 변수로 설정하면 됩니다.
@@ -111,8 +116,8 @@ PPO만 돌릴 때 (기본 50만 스텝, 환경 인자는 SAC와 동일):
 
 | 목적 | 명령 ( `rl_pmi` 디렉터리에서 ) |
 |------|--------------------------------|
-| 에피소드 리턴·추적 오차 로그만 빠르게 | `./.venv/bin/python run_policy.py --model checkpoints/sac_pmi_track.zip --episodes 5` |
-| 한 번 돌린 장면을 **mp4**로 저장 | `./.venv/bin/python record_eval_video.py --model checkpoints/sac_pmi_track.zip --out videos/eval.mp4` |
+| 에피소드 리턴·추적 오차 로그만 빠르게 | `../.venv/bin/python run_policy.py --model checkpoints/sac_pmi_track.zip --episodes 5` |
+| 한 번 돌린 장면을 **mp4**로 저장 | `../.venv/bin/python record_eval_video.py --model checkpoints/sac_pmi_track.zip --out videos/eval.mp4` |
 
 **체크리스트**
 
@@ -120,7 +125,7 @@ PPO만 돌릴 때 (기본 50만 스텝, 환경 인자는 SAC와 동일):
 2. 학습 때 **`train_sac.py`에 준 옵션**을 추론에도 맞추기: 예를 들어 학습에 `--no-gravity-ff` 를 썼다면  
    `run_policy.py` / `record_eval_video.py` 에도 **`--no-gravity-ff`** 를 같이 준다.
 3. WSL·서버 등 **디스플레이 없을 때** 영상 녹화는 보통 앞에 `MUJOCO_GL=egl` 을 붙인다.  
-   예: `MUJOCO_GL=egl ./.venv/bin/python record_eval_video.py ...`
+   예: `MUJOCO_GL=egl ../.venv/bin/python record_eval_video.py ...`
 4. `record_eval_video.py` 는 **moviepy** 필요 (`pip install moviepy` 또는 `requirements.txt` 기준 설치).
 
 숫자만 보려면 **`run_policy.py` 만** 있으면 되고, 움직임을 보려면 **`record_eval_video.py`** 로 만든 mp4를 플레이어로 연다.
@@ -157,13 +162,13 @@ PPO만 돌릴 때 (기본 50만 스텝, 환경 인자는 SAC와 동일):
 2. **바로 실행 (점수·스텝만 확인)**  
 
 ```bash
-./.venv/bin/python run_policy.py --model checkpoints/sac_pmi_track.zip --episodes 3
+../.venv/bin/python run_policy.py --model checkpoints/sac_pmi_track.zip --episodes 3
 ```
 
 3. **영상으로 확인**  
 
 ```bash
-./.venv/bin/python record_eval_video.py --model checkpoints/sac_pmi_track.zip --out videos/eval.mp4
+../.venv/bin/python record_eval_video.py --model checkpoints/sac_pmi_track.zip --out videos/eval.mp4
 ```
 
 4. **자신의 코드에 넣기**  

@@ -4,10 +4,11 @@ PMI 작업공간 추적 환경에서 SAC 학습 (잔여 정책: 작업공간 ΔF
 
 실행:
 
-  cd /path/to/PMI_project/rl_pmi
-  ./.venv/bin/pip install -r requirements.txt
-  ./.venv/bin/python train_sac.py --timesteps 500000
-  ./.venv/bin/python train_sac.py --timesteps 500000 --record-video  # 주기적 mp4 (moviepy)
+  cd /path/to/PMI
+  .venv/bin/pip install -r requirements.txt
+  cd rl_pmi
+  ../.venv/bin/python train_sac.py --timesteps 500000
+  ../.venv/bin/python train_sac.py --timesteps 500000 --record-video  # 주기적 mp4 (moviepy)
 """
 
 from __future__ import annotations
@@ -123,8 +124,8 @@ def main() -> int:
         except ImportError:
             print(
                 "`--record-video` 는 moviepy 가 필요합니다:\n"
-                "  ./.venv/bin/pip install moviepy\n"
-                "  또는 ./.venv/bin/pip install -r requirements.txt",
+                "  .venv/bin/pip install moviepy   # (저장소 루트 PMI/에서)\n"
+                "  또는 .venv/bin/pip install -r requirements.txt",
                 file=sys.stderr,
             )
             return 1

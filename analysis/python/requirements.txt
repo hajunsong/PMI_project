@@ -1,2 +1,4 @@
+# PMI 루트 `../../requirements.txt` 로 통합 설치하면 mujoco·rl_pmi 등과 한 환경에서 개발 가능합니다.
+#
 numpy>=1.20
 matplotlib>=3.5

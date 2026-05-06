@@ -15,11 +15,16 @@ PMI 4축 매니퓰레이터를 **MuJoCo**로 재생·비교·(선택) 녹화하�
 
 ## 환경 설정
 
+가상환경은 저장소 루트 **`PMI/`** 에 하나 두고, **`PMI/requirements.txt`** 로 설치합니다 (`rl_pmi`·본 디렉터리 공통).
+
 ```bash
-cd mujoco_pmi_viz
+cd /path/to/PMI
 python3 -m venv .venv
-./.venv/bin/pip install -r requirements.txt
+.venv/bin/pip install -U pip
+.venv/bin/pip install -r requirements.txt
 ```
+
+아래 명령은 **`mujoco_pmi_viz/`** 에서 실행한다고 가정합니다 (`../.venv/bin/python`).
 
 헤드리스/원격에서 렌더 오류가 나면 `MUJOCO_GL=egl` 또는 `osmesa` 등 환경에 맞게 설정합니다.
 
@@ -29,7 +34,7 @@ python3 -m venv .venv
 열 형식은 `main.py`의 `data_save()`와 동일해야 합니다.
 
 ```bash
-./.venv/bin/python play_trajectory.py --csv ../analysis/python/python_data_vsd.csv
+../.venv/bin/python play_trajectory.py --csv ../analysis/python/python_data_vsd.csv
 ```
 
 - `--model` 으로 MJCF 경로 지정 가능. 미지정 시 `meshes/base_link.STL` 존재 여부로 mesh vs primitive 자동 선택.
@@ -40,13 +45,13 @@ python3 -m venv .venv
 뷰어를 연 뒤 창을 닫으면, 동일 궤적을 오프스크린 렌더하여 저장합니다.
 
 ```bash
-./.venv/bin/python play_trajectory.py --csv ../analysis/python/python_data_vsd.csv --record traj.mp4
+../.venv/bin/python play_trajectory.py --csv ../analysis/python/python_data_vsd.csv --record traj.mp4
 ```
 
 뷰만 생략:
 
 ```bash
-MUJOCO_GL=egl ./.venv/bin/python play_trajectory.py \
+MUJOCO_GL=egl ../.venv/bin/python play_trajectory.py \
   --csv ../analysis/python/python_data_vsd.csv --record traj.mp4 --no-viewer
 ```
 
@@ -55,7 +60,7 @@ MUJOCO_GL=egl ./.venv/bin/python play_trajectory.py \
 ## EE·관절 비교 플롯
 
 ```bash
-./.venv/bin/python compare_ee_trajectory.py --csv ../analysis/python/python_data_vsd.csv --save ee_compare.png
+../.venv/bin/python compare_ee_trajectory.py --csv ../analysis/python/python_data_vsd.csv --save ee_compare.png
 ```
 
 - 두 실험의 관절열을 비교할 때: `--csv-q-b 다른파일.csv`

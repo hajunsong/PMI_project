@@ -2,7 +2,7 @@
 """
 학습된 SAC 정책으로 에피소드 rollout 영상(mp4) 저장.
 
-  ./.venv/bin/python record_eval_video.py --model checkpoints/sac_pmi_track.zip \\
+  ../.venv/bin/python record_eval_video.py --model checkpoints/sac_pmi_track.zip \\
       --out videos/eval_run.mp4
 """
 

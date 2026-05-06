@@ -5,8 +5,8 @@ CSV(`data_save`)의 EE 위치 ``re``(열 1~3)와 MuJoCo 사이트 ``ee``의 월�
 관절각은 CSV의 ``qi``(열 31~34)를 모델에 넣고 ``mj_forward`` 후 ``site_xpos`` 로 EE를 계산한다.
 
 예:
-  ./.venv/bin/python compare_ee_trajectory.py --csv ../analysis/python/python_data_path.csv
-  ./.venv/bin/python compare_ee_trajectory.py --csv runA.csv --csv-q-b runB.csv --save ee_compare.png
+  ../.venv/bin/python compare_ee_trajectory.py --csv ../analysis/python/python_data_path.csv
+  ../.venv/bin/python compare_ee_trajectory.py --csv runA.csv --csv-q-b runB.csv --save ee_compare.png
   # 저장: ee_compare.png, ee_compare_error.png, ee_compare_joints.png, ee_compare_joints_diff.png
 """
 

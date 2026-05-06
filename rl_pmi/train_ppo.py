@@ -2,11 +2,12 @@
 """
 PMI 작업공간 추적 환경에서 PPO 학습 (보상 = ``run_vsd`` 와 같은 오차 기반 비용의 음수).
 
-실행 (저장소 루트 또는 rl_pmi 디렉터리):
+실행:
 
-  cd /path/to/PMI_project/rl_pmi
-  ./.venv/bin/pip install -r requirements.txt
-  ./.venv/bin/python train_ppo.py
+  cd /path/to/PMI
+  .venv/bin/pip install -r requirements.txt
+  cd rl_pmi
+  ../.venv/bin/python train_ppo.py
 """
 
 from __future__ import annotations

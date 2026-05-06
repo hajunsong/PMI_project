@@ -4,7 +4,7 @@
 
 환경 옵션은 학습 때와 맞추세요 (`train_sac.py` 와 동일 플래그).
 
-  ./.venv/bin/python run_policy.py --model checkpoints/sac_pmi_track.zip --episodes 3
+  ../.venv/bin/python run_policy.py --model checkpoints/sac_pmi_track.zip --episodes 3  # cwd: rl_pmi
 """
 
 from __future__ import annotations

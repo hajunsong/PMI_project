@@ -7,10 +7,10 @@
 관절 열: `data_save` 기준 generalized coordinate ``qi`` → 컬럼 인덱스 31~34 (0-based).
 
 사용 예:
-  ./.venv/bin/python play_trajectory.py
-  ./.venv/bin/python play_trajectory.py --csv ../analysis/python/python_data_vsd.csv
-  ./.venv/bin/python play_trajectory.py --csv ../analysis/python/python_data_vsd.csv --record traj.mp4
-  ./.venv/bin/python play_trajectory.py --csv ../analysis/python/python_data_vsd.csv --record traj.mp4 --no-viewer
+  ../.venv/bin/python play_trajectory.py
+  ../.venv/bin/python play_trajectory.py --csv ../analysis/python/python_data_vsd.csv
+  ../.venv/bin/python play_trajectory.py --csv ../analysis/python/python_data_vsd.csv --record traj.mp4
+  ../.venv/bin/python play_trajectory.py --csv ../analysis/python/python_data_vsd.csv --record traj.mp4 --no-viewer
 """
 
 from __future__ import annotations

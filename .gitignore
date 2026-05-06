@@ -56,12 +56,14 @@ analysis/recurdyn/*/
 analysis/recurdyn/*.rbak
 analysis/recurdyn/*.icf
 
+# Python — 통합 가상환경 권장 위치: 저장소 루트 PMI/.venv (하위 폴더 개별 venv 비권장)
+.venv/
+venv/
+
 # Python (analysis/python)
 analysis/python/**/__pycache__/
 analysis/python/**/*.py[cod]
 analysis/python/**/$py.class
-analysis/python/.venv/
-analysis/python/venv/
 analysis/python/env/
 analysis/python/.pytest_cache/
 analysis/python/.mypy_cache/
@@ -100,10 +102,8 @@ ros_ws/log/
 ros_ws/.colcon/
 ros_ws/devel/
 
-# MuJoCo RL (pmi_mujoco_rl: venv, 녹화·테스트 산출물)
+# MuJoCo RL (pmi_mujoco_rl: 녹화·테스트 산출물)
 .venv_mujoco_rl/
-pmi_mujoco_rl/.venv/
-pmi_mujoco_rl/venv/
 pmi_mujoco_rl/env/
 pmi_mujoco_rl/**/__pycache__/
 pmi_mujoco_rl/**/*.py[cod]
@@ -122,9 +122,7 @@ pmi_mujoco_rl/.tox/
 pmi_mujoco_rl/outputs/
 pmi_mujoco_rl/**/*.mp4
 
-# MuJoCo 가시화·궤적 재생 (mujoco_pmi_viz: venv, 녹화·비교 산출물)
-mujoco_pmi_viz/.venv/
-mujoco_pmi_viz/venv/
+# MuJoCo 가시화·궤적 재생 (mujoco_pmi_viz: 녹화·비교 산출물)
 mujoco_pmi_viz/**/__pycache__/
 mujoco_pmi_viz/**/*.py[cod]
 mujoco_pmi_viz/**/$py.class
@@ -134,8 +132,6 @@ mujoco_pmi_viz/.pytest_cache/
 mujoco_pmi_viz/.mypy_cache/
 
 # 강화학습 실험 (rl_pmi)
-rl_pmi/.venv/
-rl_pmi/venv/
 rl_pmi/**/__pycache__/
 rl_pmi/**/*.py[cod]
 rl_pmi/checkpoints/
