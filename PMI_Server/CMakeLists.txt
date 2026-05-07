@@ -28,3 +28,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 target_link_directories(${PROJECT_NAME} PRIVATE /usr/local/lib)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE Threads::Threads dxl_x64_cpp)
+
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    PMI_SERVER_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+)

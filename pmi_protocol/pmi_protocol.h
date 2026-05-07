@@ -17,6 +17,7 @@ namespace pmi {
 constexpr uint8_t kCmdPing = 0x01;
 constexpr uint8_t kCmdServoOn = 0x10;
 constexpr uint8_t kCmdStop = 0x11;
+constexpr uint8_t kCmdSetZero = 0x12;
 constexpr uint8_t kCmdModeCurrent = 0x20;
 constexpr uint8_t kCmdModeVelocity = 0x21;
 constexpr uint8_t kCmdModeExtendedPos = 0x22;

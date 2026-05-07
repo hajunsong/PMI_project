@@ -33,6 +33,7 @@ All frames start with `SOF1 SOF2` and end with `EOF`.
 - `0x01`: Ping
 - `0x10`: Servo On
 - `0x11`: Stop (Servo Off)
+- `0x12`: SetZero (capture motor/external encoder offsets)
 - `0x20`: Mode Current
 - `0x21`: Mode Velocity
 - `0x22`: Mode Extended Position

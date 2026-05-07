@@ -14,6 +14,8 @@
 #include <unistd.h>
 
 #include <dynamixel_sdk/dynamixel_sdk.h>
+#include <cstdlib>
+#include <fstream>
 
 namespace {
 
@@ -179,6 +181,7 @@ bool DxlBus::open(const char *devicePath, int baudRate)
         return false;
     }
     (void)openAmt21PortUnlocked(kAmt21DevicePath, kAmt21BaudRate);
+    loadZeroOffsetFromFileUnlocked();
     return true;
 }
 
@@ -353,7 +356,55 @@ bool DxlBus::syncReadTelemetry(pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount
         amt21_in_fail_state_[i] = true;
     }
 
+    applyZeroOffsetUnlocked(axes);
     return true;
+}
+
+bool DxlBus::captureZeroOffsetUnlocked()
+{
+    pmi::ServoTelemetry snapshot[pmi::kTelemetryAxisCount]{};
+    for (size_t i = 0; i < pmi::kTelemetryAxisCount; ++i) {
+        if (!readMotorTelemetryUnlocked(kMotorIds[i], snapshot[i]))
+            return false;
+    }
+
+    struct AmtMap {
+        uint8_t nodeAddress;
+        size_t axisIndex;
+    };
+    constexpr AmtMap kAmtMap[3] = {
+        {kAmt21AddressForMotor2, 1},
+        {kAmt21AddressForMotor3, 2},
+        {kAmt21AddressForMotor4, 3},
+    };
+    for (const auto &m : kAmtMap) {
+        double amtAngleDeg = 0.0;
+        if (readAmt21AngleDegUnlocked(m.nodeAddress, amtAngleDeg))
+            snapshot[m.axisIndex].encoder_position = amtAngleDeg;
+    }
+
+    for (size_t i = 0; i < pmi::kTelemetryAxisCount; ++i) {
+        motor_offset_deg_[i] = snapshot[i].present_position;
+        goal_offset_deg_[i] = snapshot[i].goal_position;
+        encoder_offset_deg_[i] = snapshot[i].encoder_position;
+    }
+    zero_offset_valid_ = true;
+    if (!saveZeroOffsetToFileUnlocked())
+        std::cerr << "[PMI] warning: failed to persist zero offsets to file\n";
+    return true;
+}
+
+void DxlBus::applyZeroOffsetUnlocked(pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount]) const
+{
+    if (!zero_offset_valid_)
+        return;
+
+    for (size_t i = 0; i < pmi::kTelemetryAxisCount; ++i) {
+        axes[i].present_position -= motor_offset_deg_[i];
+        axes[i].goal_position -= goal_offset_deg_[i];
+        if (std::isfinite(axes[i].encoder_position) && std::isfinite(encoder_offset_deg_[i]))
+            axes[i].encoder_position -= encoder_offset_deg_[i];
+    }
 }
 
 void DxlBus::handlePmiClientCommand(uint8_t cmd)
@@ -390,6 +441,9 @@ void DxlBus::handlePmiClientCommand(uint8_t cmd)
     case pmi::kCmdStop:
         torqueAll(0);
         break;
+    case pmi::kCmdSetZero:
+        (void)captureZeroOffsetUnlocked();
+        break;
     case pmi::kCmdModeCurrent:
         torqueAll(0);
         modeAll(0);
@@ -405,4 +459,79 @@ void DxlBus::handlePmiClientCommand(uint8_t cmd)
     default:
         break;
     }
+}
+
+std::string DxlBus::zeroOffsetFilePath() const
+{
+    if (!zero_offset_path_.empty())
+        return zero_offset_path_;
+#ifdef PMI_SERVER_DATA_DIR
+    return std::string(PMI_SERVER_DATA_DIR) + "/pmi_zero_offsets.txt";
+#else
+    return "pmi_zero_offsets.txt";
+#endif
+}
+
+void DxlBus::loadZeroOffsetFromFileUnlocked()
+{
+    zero_offset_path_ = zeroOffsetFilePath();
+    std::ifstream ifs(zero_offset_path_);
+    if (!ifs.is_open()) {
+        std::cerr << "[PMI] no zero-offset file at " << zero_offset_path_ << " (using identity offsets)\n";
+        return;
+    }
+
+    const auto parseDouble = [](const std::string &tok, double &out) -> bool {
+        if (tok.empty())
+            return false;
+        try {
+            size_t pos = 0;
+            out = std::stod(tok, &pos);
+            return pos == tok.size();
+        } catch (...) {
+            return false;
+        }
+    };
+
+    std::array<double, pmi::kTelemetryAxisCount> motor{};
+    std::array<double, pmi::kTelemetryAxisCount> goal{};
+    std::array<double, pmi::kTelemetryAxisCount> enc{};
+    for (size_t i = 0; i < pmi::kTelemetryAxisCount; ++i) {
+        std::string m, g, e;
+        if (!(ifs >> m >> g >> e)) {
+            std::cerr << "[PMI] zero-offset file truncated at axis " << i << " (ignored)\n";
+            return;
+        }
+        if (!parseDouble(m, motor[i]) || !parseDouble(g, goal[i]) || !parseDouble(e, enc[i])) {
+            std::cerr << "[PMI] zero-offset parse failed at axis " << i << " (\"" << m << "\" \"" << g << "\" \"" << e
+                      << "\") — file ignored\n";
+            return;
+        }
+    }
+
+    motor_offset_deg_ = motor;
+    goal_offset_deg_ = goal;
+    encoder_offset_deg_ = enc;
+    zero_offset_valid_ = true;
+    std::cerr << "[PMI] loaded zero offsets from " << zero_offset_path_ << ":\n";
+    for (size_t i = 0; i < pmi::kTelemetryAxisCount; ++i) {
+        std::cerr << "  axis " << i << ": motor=" << motor_offset_deg_[i] << " goal=" << goal_offset_deg_[i]
+                  << " enc=" << encoder_offset_deg_[i] << "\n";
+    }
+}
+
+bool DxlBus::saveZeroOffsetToFileUnlocked() const
+{
+    if (!zero_offset_valid_)
+        return false;
+
+    std::ofstream ofs(zeroOffsetFilePath(), std::ios::trunc);
+    if (!ofs.is_open())
+        return false;
+
+    ofs.setf(std::ios::fixed);
+    ofs.precision(10);
+    for (size_t i = 0; i < pmi::kTelemetryAxisCount; ++i)
+        ofs << motor_offset_deg_[i] << ' ' << goal_offset_deg_[i] << ' ' << encoder_offset_deg_[i] << '\n';
+    return static_cast<bool>(ofs);
 }

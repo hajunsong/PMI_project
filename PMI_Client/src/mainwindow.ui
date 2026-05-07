@@ -149,7 +149,7 @@
           </sizepolicy>
          </property>
          <property name="text">
-          <string>Zero</string>
+          <string>SetZero</string>
          </property>
         </widget>
        </item>

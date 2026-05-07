@@ -263,7 +263,7 @@ void MainWindow::onStopClicked()
 
 void MainWindow::onZeroClicked()
 {
-    // PMI 프로토콜에 제로/홈 명령이 없으면 서버 연동 후 추가.
+    sendClientCmd(pmi::kCmdSetZero);
 }
 
 void MainWindow::onModeCurrentClicked()
