@@ -1,7 +1,9 @@
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <string>
 
@@ -12,6 +14,16 @@
 namespace {
 
 constexpr int NB = 4;
+
+double env_or_default(const char* name, double default_value)
+{
+    const char* v = std::getenv(name);
+    if (!v) return default_value;
+    char* end = nullptr;
+    const double parsed = std::strtod(v, &end);
+    if (end == v) return default_value;
+    return parsed;
+}
 
 void fill_inertia(mat3& J, scalar Ixx, scalar Ixy, scalar Iyy, scalar Iyz, scalar Izz, scalar Izx)
 {
@@ -75,7 +87,26 @@ void ControlMain::open_log(const std::string& path)
     fp.open(path, std::ios::out | std::ios::trunc);
     if (!fp) {
         std::cerr << "open_log failed: " << path << '\n';
+        return;
     }
+
+    fp << "t,"
+       << "ee_x,ee_y,ee_z,ee_roll,ee_pitch,ee_yaw,"
+       << "ee_vx,ee_vy,ee_vz,ee_wx,ee_wy,ee_wz,"
+       << "ee_ax,ee_ay,ee_az,ee_awx,ee_awy,ee_awz,";
+    for (int i = 0; i < NB; ++i) fp << "q_act_" << (i + 1) << ",";
+    for (int i = 0; i < NB; ++i) fp << "dq_act_" << (i + 1) << ",";
+    for (int i = 0; i < NB; ++i) fp << "ddq_act_" << (i + 1) << ",";
+    for (int i = 0; i < NB; ++i) fp << "q_" << (i + 1) << ",";
+    for (int i = 0; i < NB; ++i) fp << "dq_" << (i + 1) << ",";
+    for (int i = 0; i < NB; ++i) fp << "ddq_" << (i + 1) << ",";
+    fp << "des_x,des_y,des_z,"
+       << "err_x,err_y,err_z,following_error,";
+    for (int i = 0; i < NB; ++i) fp << "des_q_" << (i + 1) << ",";
+    for (int i = 0; i < NB; ++i) fp << "err_q_" << (i + 1) << ",";
+    fp << "following_error_q,"
+       << "des_roll,des_pitch,des_yaw,"
+       << "err_roll,err_pitch,err_yaw,following_error_ori\n";
 }
 
 void ControlMain::close_log()
@@ -121,6 +152,16 @@ void ControlMain::run()
     vec8 Y0, k1, k2, k3, k4;
 
     while(t_e > t_c){
+        log_des_pos = vec3::Constant(std::numeric_limits<scalar>::quiet_NaN());
+        log_err_pos = vec3::Constant(std::numeric_limits<scalar>::quiet_NaN());
+        log_following_error = std::numeric_limits<scalar>::quiet_NaN();
+        log_des_q = vec4::Constant(std::numeric_limits<scalar>::quiet_NaN());
+        log_err_q = vec4::Constant(std::numeric_limits<scalar>::quiet_NaN());
+        log_following_error_q = std::numeric_limits<scalar>::quiet_NaN();
+        log_des_rpy = vec3::Constant(std::numeric_limits<scalar>::quiet_NaN());
+        log_err_rpy = vec3::Constant(std::numeric_limits<scalar>::quiet_NaN());
+        log_following_error_ori = std::numeric_limits<scalar>::quiet_NaN();
+
         Y0 = Y;
         k1 = analysis(Y0);
         k2 = analysis(Y0 + (h/2.0)*k1);
@@ -132,7 +173,6 @@ void ControlMain::run()
 
         data_save();
 
-        std::cout << "t_c : " << t_c << std::endl;
         t_c += h;
         index++;
     }
@@ -143,7 +183,7 @@ void ControlMain::run()
 void ControlMain::run_vsd(){
     h = 0.001;
     t_c = 0;
-    t_e = 3;
+    t_e = 1.5;
 
     read_data();
 
@@ -153,25 +193,36 @@ void ControlMain::run_vsd(){
         std::filesystem::weakly_canonical(
             std::filesystem::path(__FILE__).parent_path().parent_path().parent_path())
         / "recurdyn"
-        / "rec_data_path.csv";
+        / "rec_data_path2.csv";
     if (!load_recurdyn_csv(csv_path, rec_data)) {
         std::cerr << "load rec_data.csv failed: " << csv_path << '\n';
     }
 
-    double wp_t[7] = {0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0};
-    double wp_x[7] = {-0.35, -0.25, 0.25, 0.35, 0.18, -0.18, -0.35};
-    double wp_y[7] = {0.15, -0.28, -0.28, 0.15, 0.37, 0.37, 0.15};
-    double wp_z[7] = {-0.2, -0.2, -0.2, -0.2, 0.13, 0.13, -0.2};
+    // double wp_t[7] = {0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0};
+    // double wp_x[7] = {-0.35, -0.25, 0.25, 0.35, 0.18, -0.18, -0.35};
+    // double wp_y[7] = {0.15, -0.28, -0.28, 0.15, 0.37, 0.37, 0.15};
+    // double wp_z[7] = {-0.2, -0.2, -0.2, -0.2, 0.13, 0.13, -0.2};
+
+    // double wp_t[8] = {0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5};
+    // double wp_x[8] = {0, -0.25, -0.35, -0.18, 0.18, 0.35, 0.25, 0};
+    // double wp_y[8] = {0.33716302, -0.28, 0.15, 0.37, 0.37, 0.15, -0.28, 0.33716302};
+    // double wp_z[8] = {0.2987143, 0, 0, 0.13, 0.13, 0, 0, 0.2987143};
+
+    double wp_t[4] = {0.0, 0.5, 1.0, 1.5};
+    double wp_x[4] = {-0.35, -0.25, 0.25, 0.35};
+    double wp_y[4] = {0.15, -0.28, -0.28, 0.15};
+    double wp_z[4] = {0, 0, 0, 0};
 
     std::vector< std::array<double, 3> > path_x, path_y, path_z;
-    path_x = path_build(wp_t, wp_x, 7, 0.0, h, true);
-    path_y = path_build(wp_t, wp_y, 7, 0.0, h, true);
-    path_z = path_build(wp_t, wp_z, 7, 0.0, h, true);
+    path_x = path_build(wp_t, wp_x, 4, 0.0, h, true);
+    path_y = path_build(wp_t, wp_y, 4, 0.0, h, true);
+    path_z = path_build(wp_t, wp_z, 4, 0.0, h, true);
 
     std::cout << "path len x/y/z : " << path_x.size() << ", " << path_y.size() << ", " << path_z.size() << std::endl;
 
+    double q_init[4] = {-2.7367009, 1.0880061, 1.1749032, -0.87868275};
     for(int i = 0; i < 4; i++){
-        body[i].qi = rec_data(0, 31 + i);
+        body[i].qi = q_init[i];
     }
 
     open_log("cpp_data_vsd.csv");
@@ -180,9 +231,36 @@ void ControlMain::run_vsd(){
     scalar des_roll, des_pitch, err_roll, err_pitch;
     Eigen::Matrix<scalar, 5, 1> err, Ke, Kv;
     Eigen::Matrix<scalar, 5, 1> des_vel, ev;
-    double Ks[5] = {15000, 15000, 15000, 1500, 1500};
-    double Kd[5] = {1000, 1000, 1000, 10, 10};
+    // Further tuned defaults for current path/initial posture setup.
+    double Ks[5] = {218279.026146, 230800.488552, 159168.050363, 2433.229196, 16124.352342};
+    double Kd[5] = {1109.348611, 1707.380149, 5502.23545, 16.731615, 7.095061};
+    const double ks_pos_scale = env_or_default("VSD_KS_POS_SCALE", 1.0);
+    const double kd_pos_scale = env_or_default("VSD_KD_POS_SCALE", 1.0);
+    const double ks_ori_scale = env_or_default("VSD_KS_ORI_SCALE", 1.0);
+    const double kd_ori_scale = env_or_default("VSD_KD_ORI_SCALE", 1.0);
+    for (int i = 0; i < 3; ++i) {
+        Ks[i] *= ks_pos_scale;
+        Kd[i] *= kd_pos_scale;
+    }
+    for (int i = 3; i < 5; ++i) {
+        Ks[i] *= ks_ori_scale;
+        Kd[i] *= kd_ori_scale;
+    }
+    // Per-axis absolute override (priority over scale env): x/y/z/roll/pitch
+    Ks[0] = env_or_default("VSD_KS_X", Ks[0]);
+    Ks[1] = env_or_default("VSD_KS_Y", Ks[1]);
+    Ks[2] = env_or_default("VSD_KS_Z", Ks[2]);
+    Ks[3] = env_or_default("VSD_KS_ROLL", Ks[3]);
+    Ks[4] = env_or_default("VSD_KS_PITCH", Ks[4]);
+    Kd[0] = env_or_default("VSD_KD_X", Kd[0]);
+    Kd[1] = env_or_default("VSD_KD_Y", Kd[1]);
+    Kd[2] = env_or_default("VSD_KD_Z", Kd[2]);
+    Kd[3] = env_or_default("VSD_KD_ROLL", Kd[3]);
+    Kd[4] = env_or_default("VSD_KD_PITCH", Kd[4]);
     vec4 tau;
+    double fe_pos_sum = 0.0, fe_q_sum = 0.0, fe_ori_sum = 0.0;
+    int fe_pos_count = 0, fe_q_count = 0, fe_ori_count = 0;
+    double fe_pos_peak = 0.0, fe_q_peak = 0.0, fe_ori_peak = 0.0;
     while(t_c < t_e){
         des_pos = vec3(path_x[index][0], path_y[index][0], path_z[index][0]);
         des_roll = -M_PI_2;
@@ -196,6 +274,7 @@ void ControlMain::run_vsd(){
         err_roll = wrap_to_pi(des_roll - body[3].rpy(0));
         err_pitch = wrap_to_pi(des_pitch - body[3].rpy(1));
         err << err_pos, err_roll, err_pitch;
+
         ev[0] = des_vel[0] - body[3].dre[0];
         ev[1] = des_vel[1] - body[3].dre[1];
         ev[2] = des_vel[2] - body[3].dre[2];
@@ -232,12 +311,73 @@ void ControlMain::run_vsd(){
 
         analysis();
 
+        // Match logged error with the same EE state that is being saved.
+        err_pos = des_pos - body[3].re;
+        err_roll = wrap_to_pi(des_roll - body[3].rpy(0));
+        err_pitch = wrap_to_pi(des_pitch - body[3].rpy(1));
+        log_des_pos = des_pos;
+        log_err_pos = err_pos;
+        log_following_error = err_pos.norm();
+        if (index < rec_data.rows() && rec_data.cols() >= 35) {
+            for (int i = 0; i < NB; ++i) {
+                log_des_q(i) = rec_data(index, 31 + i);
+                log_err_q(i) = log_des_q(i) - body[i].qi;
+            }
+            log_following_error_q = log_err_q.norm();
+        } else {
+            log_des_q = vec4::Constant(std::numeric_limits<scalar>::quiet_NaN());
+            log_err_q = vec4::Constant(std::numeric_limits<scalar>::quiet_NaN());
+            log_following_error_q = std::numeric_limits<scalar>::quiet_NaN();
+        }
+        log_des_rpy << des_roll, des_pitch, std::numeric_limits<scalar>::quiet_NaN();
+        log_err_rpy << err_roll, err_pitch, std::numeric_limits<scalar>::quiet_NaN();
+        log_following_error_ori = std::hypot(err_roll, err_pitch);
+
+        const bool invalid_state =
+            !std::isfinite(log_following_error) ||
+            !std::isfinite(log_following_error_ori) ||
+            !std::isfinite(body[0].qi) || !std::isfinite(body[1].qi) ||
+            !std::isfinite(body[2].qi) || !std::isfinite(body[3].qi);
+        if (invalid_state) {
+            std::cerr << "[WARN] Invalid numeric state detected at t=" << t_c
+                      << ". Stopping simulation early.\n";
+            break;
+        }
+
+        if (std::isfinite(log_following_error)) {
+            fe_pos_sum += log_following_error;
+            fe_pos_count++;
+            if (log_following_error > fe_pos_peak) fe_pos_peak = log_following_error;
+        }
+        if (std::isfinite(log_following_error_q)) {
+            fe_q_sum += log_following_error_q;
+            fe_q_count++;
+            if (log_following_error_q > fe_q_peak) fe_q_peak = log_following_error_q;
+        }
+        if (std::isfinite(log_following_error_ori)) {
+            fe_ori_sum += log_following_error_ori;
+            fe_ori_count++;
+            if (log_following_error_ori > fe_ori_peak) fe_ori_peak = log_following_error_ori;
+        }
+
         data_save();
 
-        std::cout << "t_c : " << t_c << std::endl;
         t_c += h;
         index++;
     }
+
+    std::cout << "[SUMMARY] "
+              << "fe_pos(avg=" << (fe_pos_count > 0 ? fe_pos_sum / fe_pos_count : 0.0)
+              << ", peak=" << fe_pos_peak << ")";
+    if (fe_q_count > 0) {
+        std::cout << ", fe_q(avg=" << (fe_q_sum / fe_q_count)
+                  << ", peak=" << fe_q_peak << ")";
+    }
+    if (fe_ori_count > 0) {
+        std::cout << ", fe_ori(avg=" << (fe_ori_sum / fe_ori_count)
+                  << ", peak=" << fe_ori_peak << ")";
+    }
+    std::cout << std::endl;
 
     close_log();
 }
@@ -245,36 +385,36 @@ void ControlMain::run_vsd(){
 void ControlMain::run_ik(){
     h = 0.001;
     t_c = 0;
-    t_e = 3;
+    t_e = 3.5;
 
     read_data();
 
     // Python: Path(main.py).parent / "../recurdyn/rec_data_path.csv" → analysis/recurdyn/...
     // __FILE__ = analysis/cpp/src/controlmain.cpp → parent×3 = analysis/
-    const std::filesystem::path csv_path =
-        std::filesystem::weakly_canonical(
-            std::filesystem::path(__FILE__).parent_path().parent_path().parent_path())
-        / "recurdyn"
-        / "rec_data_path.csv";
-    if (!load_recurdyn_csv(csv_path, rec_data)) {
-        std::cerr << "load rec_data.csv failed: " << csv_path << '\n';
-    }
+    // const std::filesystem::path csv_path =
+    //     std::filesystem::weakly_canonical(
+    //         std::filesystem::path(__FILE__).parent_path().parent_path().parent_path())
+    //     / "recurdyn"
+    //     / "rec_data_path.csv";
+    // if (!load_recurdyn_csv(csv_path, rec_data)) {
+    //     std::cerr << "load rec_data.csv failed: " << csv_path << '\n';
+    // }
 
-    double wp_t[7] = {0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0};
-    double wp_x[7] = {-0.35, -0.25, 0.25, 0.35, 0.18, -0.18, -0.35};
-    double wp_y[7] = {0.15, -0.28, -0.28, 0.15, 0.37, 0.37, 0.15};
-    double wp_z[7] = {-0.2, -0.2, -0.2, -0.2, 0.13, 0.13, -0.2};
+    double wp_t[8] = {0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5};
+    double wp_x[8] = {0, -0.25, -0.35, -0.18, 0.18, 0.35, 0.25, 0};
+    double wp_y[8] = {0.33716302, -0.28, 0.15, 0.37, 0.37, 0.15, -0.28, 0.33716302};
+    double wp_z[8] = {0.2987143, 0, 0, 0.13, 0.13, 0, 0, 0.2987143};
 
     std::vector< std::array<double, 3> > path_x, path_y, path_z;
-    path_x = path_build(wp_t, wp_x, 7, 0.0, h, true);
-    path_y = path_build(wp_t, wp_y, 7, 0.0, h, true);
-    path_z = path_build(wp_t, wp_z, 7, 0.0, h, true);
+    path_x = path_build(wp_t, wp_x, 8, 0.0, h, true);
+    path_y = path_build(wp_t, wp_y, 8, 0.0, h, true);
+    path_z = path_build(wp_t, wp_z, 8, 0.0, h, true);
 
     std::cout << "path len x/y/z : " << path_x.size() << ", " << path_y.size() << ", " << path_z.size() << std::endl;
 
+    double q_init[NB] = {-90, 30, 45, -105};
     for(int i = 0; i < NB; i++){
-        body[i].qi = rec_data(0, 31 + i);
-        // body[i].dqi = rec_data(0, 35 + i);
+        body[i].qi = q_init[i]*M_PI/180.0;
     }
 
     open_log("cpp_data_path.csv");
@@ -295,6 +435,9 @@ void ControlMain::run_ik(){
     double alpha = 0.6;
     using mat5 = Eigen::Matrix<scalar, 5, 5>;
     vec4 delta_q, q_dot;
+    double fe_pos_sum = 0.0, fe_q_sum = 0.0, fe_ori_sum = 0.0;
+    int fe_pos_count = 0, fe_q_count = 0, fe_ori_count = 0;
+    double fe_pos_peak = 0.0, fe_q_peak = 0.0, fe_ori_peak = 0.0;
     while(t_e > t_c){
         des_pos = vec3(path_x[index][0], path_y[index][0], path_z[index][0]);
         des_roll = -M_PI_2;
@@ -338,12 +481,54 @@ void ControlMain::run_ik(){
             if(err.norm() < err_tol) break;
         }
 
+        // Save the post-IK achieved position error for this step.
+        log_des_pos = des_pos;
+        log_err_pos = err_pos;
+        log_following_error = err_pos.norm();
+        for (int i = 0; i < NB; ++i) {
+            // In IK mode, the converged joint state is the desired joint target.
+            log_des_q(i) = body[i].qi;
+            log_err_q(i) = scalar(0);
+        }
+        log_following_error_q = scalar(0);
+        log_des_rpy << des_roll, des_pitch, std::numeric_limits<scalar>::quiet_NaN();
+        log_err_rpy << err_roll, err_pitch, std::numeric_limits<scalar>::quiet_NaN();
+        log_following_error_ori = std::hypot(err_roll, err_pitch);
+
+        if (std::isfinite(log_following_error)) {
+            fe_pos_sum += log_following_error;
+            fe_pos_count++;
+            if (log_following_error > fe_pos_peak) fe_pos_peak = log_following_error;
+        }
+        if (std::isfinite(log_following_error_q)) {
+            fe_q_sum += log_following_error_q;
+            fe_q_count++;
+            if (log_following_error_q > fe_q_peak) fe_q_peak = log_following_error_q;
+        }
+        if (std::isfinite(log_following_error_ori)) {
+            fe_ori_sum += log_following_error_ori;
+            fe_ori_count++;
+            if (log_following_error_ori > fe_ori_peak) fe_ori_peak = log_following_error_ori;
+        }
+
         data_save();
 
-        std::cout << "t_c : " << t_c << std::endl;
         t_c += h;
         index++;
     }
+
+    std::cout << "[SUMMARY] "
+              << "fe_pos(avg=" << (fe_pos_count > 0 ? fe_pos_sum / fe_pos_count : 0.0)
+              << ", peak=" << fe_pos_peak << ")";
+    if (fe_q_count > 0) {
+        std::cout << ", fe_q(avg=" << (fe_q_sum / fe_q_count)
+                  << ", peak=" << fe_q_peak << ")";
+    }
+    if (fe_ori_count > 0) {
+        std::cout << ", fe_ori(avg=" << (fe_ori_sum / fe_ori_count)
+                  << ", peak=" << fe_ori_peak << ")";
+    }
+    std::cout << std::endl;
 
     close_log();
 }
@@ -781,7 +966,15 @@ void ControlMain::data_save()
     for (int i = 0; i < NB; ++i) fp << body[i].qi << ",";
     for (int i = 0; i < NB; ++i) fp << body[i].dqi << ",";
     for (int i = 0; i < NB; ++i) fp << body[i].ddqi << ",";
-    fp << '\n';
+    fp << log_des_pos(0) << "," << log_des_pos(1) << "," << log_des_pos(2) << ",";
+    fp << log_err_pos(0) << "," << log_err_pos(1) << "," << log_err_pos(2) << ",";
+    fp << log_following_error << ",";
+    for (int i = 0; i < NB; ++i) fp << log_des_q(i) << ",";
+    for (int i = 0; i < NB; ++i) fp << log_err_q(i) << ",";
+    fp << log_following_error_q << ",";
+    fp << log_des_rpy(0) << "," << log_des_rpy(1) << "," << log_des_rpy(2) << ",";
+    fp << log_err_rpy(0) << "," << log_err_rpy(1) << "," << log_err_rpy(2) << ",";
+    fp << log_following_error_ori << '\n';
 }
 
 std::vector< std::array<double, 3> > ControlMain::path_build(double* wp_t, double* wp_x, int wp_n, double ta, double h, bool full_quintic){

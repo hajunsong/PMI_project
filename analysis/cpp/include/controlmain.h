@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fstream>
+#include <limits>
 #include <string>
 
 #include <Eigen/Dense>
@@ -47,6 +48,16 @@ private:
     vec8 Y{};
     vec4 ddq{};
     std::ofstream fp;
+    // Logging helpers (set by run_* loops, consumed by data_save()).
+    vec3 log_des_pos = vec3::Constant(std::numeric_limits<scalar>::quiet_NaN());
+    vec3 log_err_pos = vec3::Constant(std::numeric_limits<scalar>::quiet_NaN());
+    scalar log_following_error = std::numeric_limits<scalar>::quiet_NaN();
+    vec4 log_des_q = vec4::Constant(std::numeric_limits<scalar>::quiet_NaN());
+    vec4 log_err_q = vec4::Constant(std::numeric_limits<scalar>::quiet_NaN());
+    scalar log_following_error_q = std::numeric_limits<scalar>::quiet_NaN();
+    vec3 log_des_rpy = vec3::Constant(std::numeric_limits<scalar>::quiet_NaN());
+    vec3 log_err_rpy = vec3::Constant(std::numeric_limits<scalar>::quiet_NaN());
+    scalar log_following_error_ori = std::numeric_limits<scalar>::quiet_NaN();
     /** ``rec_data_path.csv``를 읽은 뒤 첫 열을 제외한 부분 (Python ``rec_data_raw[:, 1:]``). */
     Eigen::MatrixXd rec_data;
     std::vector< std::array<double, 3> > path_build(double* wp_t, double* wp_x, int wp_n, double ta, double h, bool fuul_quintic=false);
