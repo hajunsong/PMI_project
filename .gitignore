@@ -38,6 +38,7 @@ CMakeLists.txt.user*
 
 # IDE (로컬 전용)
 .idea/
+.vscode/
 *.code-workspace
 
 # 에디터 백업
@@ -137,3 +138,6 @@ rl_pmi/**/*.py[cod]
 rl_pmi/checkpoints/
 rl_pmi/tensorboard_logs/
 rl_pmi/*.zip
+
+# PMI Server runtime logs
+PMI_Server/pmi_server_log_*.csv
