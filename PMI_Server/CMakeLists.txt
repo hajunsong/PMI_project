@@ -17,6 +17,8 @@ add_executable(${PROJECT_NAME}
     ${PMI_PROTOCOL_DIR}/pmi_protocol.cpp
     src/dxl_protocol2.cpp
     src/tcp_server.cpp
+    src/path_planner.cpp
+    src/server_logger.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE

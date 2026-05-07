@@ -224,6 +224,166 @@
      </widget>
     </item>
     <item row="0" column="3">
+     <widget class="QGroupBox" name="groupBoxTrajectory">
+      <property name="title">
+       <string>Trajectory IK</string>
+      </property>
+      <layout class="QGridLayout" name="gridLayoutTrajectory">
+       <item row="0" column="0" colspan="5">
+        <widget class="QTableWidget" name="waypointTable">
+         <property name="rowCount">
+          <number>7</number>
+         </property>
+         <property name="columnCount">
+          <number>4</number>
+         </property>
+         <column>
+          <property name="text">
+           <string>t (s)</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>x</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>y</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>z</string>
+          </property>
+         </column>
+        </widget>
+       </item>
+       <item row="1" column="0">
+        <widget class="QPushButton" name="btnSendInitialPose">
+         <property name="text">
+          <string>Send Init Pose</string>
+         </property>
+        </widget>
+       </item>
+       <item row="1" column="1">
+        <widget class="QLineEdit" name="initQ1Edit">
+         <property name="placeholderText">
+          <string>q1 rad</string>
+         </property>
+        </widget>
+       </item>
+       <item row="1" column="2">
+        <widget class="QLineEdit" name="initQ2Edit">
+         <property name="placeholderText">
+          <string>q2 rad</string>
+         </property>
+        </widget>
+       </item>
+       <item row="1" column="3">
+        <widget class="QLineEdit" name="initQ3Edit">
+         <property name="placeholderText">
+          <string>q3 rad</string>
+         </property>
+        </widget>
+       </item>
+       <item row="1" column="4">
+        <widget class="QLineEdit" name="initQ4Edit">
+         <property name="placeholderText">
+          <string>q4 rad</string>
+         </property>
+        </widget>
+       </item>
+       <item row="2" column="0" colspan="5">
+        <widget class="QLabel" name="labelInitPoseUnit">
+         <property name="text">
+          <string>Init Pose unit: rad (joint angle)</string>
+         </property>
+        </widget>
+       </item>
+       <item row="3" column="0">
+        <widget class="QPushButton" name="btnSendWaypoints">
+         <property name="text">
+          <string>Send WP</string>
+         </property>
+        </widget>
+       </item>
+       <item row="3" column="1">
+        <widget class="QPushButton" name="btnPlanPath">
+         <property name="text">
+          <string>Plan</string>
+         </property>
+        </widget>
+       </item>
+       <item row="3" column="2">
+        <widget class="QPushButton" name="btnTrajStart">
+         <property name="text">
+          <string>Start</string>
+         </property>
+        </widget>
+       </item>
+       <item row="3" column="3">
+        <widget class="QPushButton" name="btnTrajStop">
+         <property name="text">
+          <string>Stop</string>
+         </property>
+        </widget>
+       </item>
+       <item row="4" column="0" colspan="5">
+        <widget class="QLabel" name="labelTrajectoryStatus">
+         <property name="text">
+          <string>Status: idle</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </item>
+    <item row="0" column="4">
+     <widget class="QGroupBox" name="groupBoxLogging">
+      <property name="title">
+       <string>Logging</string>
+      </property>
+      <layout class="QGridLayout" name="gridLayoutLogging">
+       <item row="0" column="0">
+        <widget class="QLabel" name="labelLogDuration">
+         <property name="text">
+          <string>Duration (s)</string>
+         </property>
+        </widget>
+       </item>
+       <item row="0" column="1">
+        <widget class="QLineEdit" name="logDurationEdit">
+         <property name="text">
+          <string>10.0</string>
+         </property>
+        </widget>
+       </item>
+       <item row="1" column="0">
+        <widget class="QPushButton" name="btnLogStart">
+         <property name="text">
+          <string>Start Logging</string>
+         </property>
+        </widget>
+       </item>
+       <item row="1" column="1">
+        <widget class="QPushButton" name="btnLogStop">
+         <property name="text">
+          <string>Stop Logging</string>
+         </property>
+        </widget>
+       </item>
+       <item row="2" column="0" colspan="2">
+        <widget class="QLabel" name="labelLogStatus">
+         <property name="text">
+          <string>Status: idle</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </item>
+    <item row="0" column="5">
      <spacer name="horizontalSpacer">
       <property name="orientation">
        <enum>Qt::Horizontal</enum>
@@ -236,7 +396,7 @@
       </property>
      </spacer>
     </item>
-    <item row="1" column="0" colspan="4">
+    <item row="1" column="0" colspan="6">
      <widget class="QGroupBox" name="groupBoxProtocol">
       <property name="title">
        <string>Protocol Receive</string>

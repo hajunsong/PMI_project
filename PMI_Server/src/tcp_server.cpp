@@ -1,13 +1,17 @@
 #include "tcp_server.h"
 
 #include "dxl_protocol2.h"
+#include "path_planner.h"
 #include "pmi_protocol.h"
+#include "server_logger.h"
 
 #include <chrono>
 #include <cerrno>
+#include <cmath>
 #include <cstring>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -117,6 +121,87 @@ bool sendTelemetryFrameNonBlock(int cfd, const std::vector<uint8_t> &frame)
     return true;
 }
 
+double readF64LE(const uint8_t *src)
+{
+    std::uint64_t u = 0;
+    for (int b = 0; b < 8; ++b)
+        u |= static_cast<std::uint64_t>(src[b]) << (8 * b);
+    double v = 0.0;
+    std::memcpy(&v, &u, 8);
+    return v;
+}
+
+bool parseLogStartPayload(const std::vector<uint8_t> &payload, double &durationSecOut)
+{
+    if (payload.size() != 8)
+        return false;
+    durationSecOut = readF64LE(payload.data());
+    return std::isfinite(durationSecOut) && durationSecOut > 0.0;
+}
+
+bool parseWaypointPayload(const std::vector<uint8_t> &payload, std::vector<PathPlanner::Waypoint> &out)
+{
+    out.clear();
+    if (payload.empty())
+        return false;
+    const std::size_t count = payload[0];
+    if (count < 2)
+        return false;
+    const std::size_t need = 1 + count * 32;
+    if (payload.size() != need)
+        return false;
+    out.reserve(count);
+    for (std::size_t i = 0; i < count; ++i) {
+        const std::size_t off = 1 + i * 32;
+        PathPlanner::Waypoint wp;
+        wp.t = readF64LE(payload.data() + off);
+        wp.x = readF64LE(payload.data() + off + 8);
+        wp.y = readF64LE(payload.data() + off + 16);
+        wp.z = readF64LE(payload.data() + off + 24);
+        if (!std::isfinite(wp.t) || !std::isfinite(wp.x) || !std::isfinite(wp.y) || !std::isfinite(wp.z))
+            return false;
+        out.push_back(wp);
+    }
+    for (std::size_t i = 1; i < out.size(); ++i) {
+        if (out[i].t <= out[i - 1].t)
+            return false;
+    }
+    return true;
+}
+
+bool parseInitialJointPosePayload(const std::vector<uint8_t> &payload, std::array<double, 4> &jointRadOut)
+{
+    if (payload.size() != 32)
+        return false;
+    for (int i = 0; i < 4; ++i) {
+        const double v = readF64LE(payload.data() + i * 8);
+        if (!std::isfinite(v))
+            return false;
+        jointRadOut[static_cast<size_t>(i)] = v;
+    }
+    return true;
+}
+
+struct InitPoseMotion {
+    bool active = false;
+    std::chrono::steady_clock::time_point startTime{};
+    std::array<double, 4> qStartRad{{0.0, 0.0, 0.0, 0.0}};
+    std::array<double, 4> qTargetRad{{0.0, 0.0, 0.0, 0.0}};
+};
+
+double quinticBlend(double r)
+{
+    if (r <= 0.0)
+        return 0.0;
+    if (r >= 1.0)
+        return 1.0;
+    const double r2 = r * r;
+    const double r3 = r2 * r;
+    const double r4 = r3 * r;
+    const double r5 = r4 * r;
+    return 10.0 * r3 - 15.0 * r4 + 6.0 * r5;
+}
+
 } // namespace
 
 void TcpServer::clientSession(int cfd)
@@ -140,6 +225,14 @@ void TcpServer::clientSession(int cfd)
     auto lastDxlFailLog = clock::time_point{};
     pmi::ServoTelemetry latestAxes[pmi::kTelemetryAxisCount]{};
     bool haveLatestTelemetry = false;
+    PathPlanner planner;
+    std::vector<PathPlanner::Waypoint> waypoints;
+    ServerLogger logger;
+    constexpr double kPlannerDt = 0.005;
+    constexpr double kGear[4] = {32.0 / 60.0, 360.0 / 54.0, 360.0 / 108.0, 360.0 / 108.0};
+    constexpr double kInitPoseMoveSec = 5.0;
+    InitPoseMotion initPoseMotion;
+    auto lastInitProgressAck = clock::time_point{};
 
     while (true) {
         const auto now = clock::now();
@@ -163,6 +256,69 @@ void TcpServer::clientSession(int cfd)
             } else {
                 fillDummyTelemetry(latestAxes, txTick);
                 haveLatestTelemetry = true;
+            }
+            ServerLogger::PathDesiredPose pathDesired{};
+            PathPlanner::DesiredPose plannerDesired{};
+            if (planner.currentDesiredPose(plannerDesired)) {
+                pathDesired.valid = true;
+                pathDesired.x = plannerDesired.x;
+                pathDesired.y = plannerDesired.y;
+                pathDesired.z = plannerDesired.z;
+                pathDesired.roll = plannerDesired.roll;
+                pathDesired.pitch = plannerDesired.pitch;
+                pathDesired.yaw = plannerDesired.yaw;
+            }
+            logger.updateLatest(latestAxes, haveLatestTelemetry, pathDesired);
+
+            if (planner.isRunning()) {
+                std::array<double, 4> qJointRad{};
+                if (planner.step(qJointRad)) {
+                    std::array<double, pmi::kTelemetryAxisCount> motorDeg{};
+                    for (size_t i = 0; i < pmi::kTelemetryAxisCount; ++i) {
+                        const double qJointDeg = qJointRad[i] * 180.0 / M_PI;
+                        motorDeg[i] = qJointDeg / kGear[i];
+                        latestAxes[i].goal_position = qJointDeg;
+                    }
+                    if (m_dxl && m_dxl->isOpen())
+                        (void)m_dxl->writeGoalPositionDeg(motorDeg);
+                } else {
+                    planner.stop();
+                }
+            }
+
+            if (initPoseMotion.active) {
+                const double elapsedSec =
+                    std::chrono::duration_cast<std::chrono::duration<double>>(now - initPoseMotion.startTime).count();
+                const double r = elapsedSec / kInitPoseMoveSec;
+                const double s = quinticBlend(r);
+                const double progressPercent = std::min(100.0, std::max(0.0, r * 100.0));
+                std::array<double, 4> qJointRad{};
+                std::array<double, pmi::kTelemetryAxisCount> motorDeg{};
+                for (size_t i = 0; i < 4; ++i) {
+                    qJointRad[i] =
+                        initPoseMotion.qStartRad[i] + (initPoseMotion.qTargetRad[i] - initPoseMotion.qStartRad[i]) * s;
+                    const double qJointDeg = qJointRad[i] * 180.0 / M_PI;
+                    motorDeg[i] = qJointDeg / kGear[i];
+                    latestAxes[i].goal_position = qJointDeg;
+                }
+                if (m_dxl && m_dxl->isOpen())
+                    (void)m_dxl->writeGoalPositionDeg(motorDeg);
+                constexpr auto kAckInterval = std::chrono::milliseconds(200);
+                if (lastInitProgressAck == clock::time_point{} || now - lastInitProgressAck >= kAckInterval) {
+                    lastInitProgressAck = now;
+                    const std::string msg = "INIT_POSE_PROGRESS:" + std::to_string(progressPercent);
+                    (void)sendTelemetryFrameNonBlock(
+                        cfd, pmi::buildServerAckFrame(pmi::kSrvAck, std::vector<uint8_t>(msg.begin(), msg.end())));
+                }
+
+                if (r >= 1.0) {
+                    initPoseMotion.active = false;
+                    planner.setInitialJointRad(initPoseMotion.qTargetRad);
+                    const std::string msg = "INIT_POSE_DONE";
+                    (void)sendTelemetryFrameNonBlock(
+                        cfd, pmi::buildServerAckFrame(pmi::kSrvAck, std::vector<uint8_t>(msg.begin(), msg.end())));
+                    std::cerr << "[PMI] initial joint pose motion completed (5s quintic)\n";
+                }
             }
         }
 
@@ -213,7 +369,94 @@ void TcpServer::clientSession(int cfd)
                 }
             }
 
-            pmi::feedClientRxStream(rx, [this](uint8_t cmd, const std::vector<uint8_t> & /*payload*/) {
+            pmi::feedClientRxStream(
+                rx, [this, &planner, &waypoints, &latestAxes, &kGear, &haveLatestTelemetry, &initPoseMotion, &logger, &cfd, now](
+                        uint8_t cmd, const std::vector<uint8_t> &payload) {
+                if (cmd == pmi::kCmdSetWaypointBatch) {
+                    if (parseWaypointPayload(payload, waypoints)) {
+                        planner.setWaypoints(waypoints);
+                        std::cerr << "[PMI] received " << waypoints.size() << " waypoint(s)\n";
+                    } else {
+                        std::cerr << "[PMI] invalid waypoint payload\n";
+                    }
+                    return;
+                }
+                if (cmd == pmi::kCmdPlanPath) {
+                    if (planner.plan(kPlannerDt))
+                        std::cerr << "[PMI] trajectory planned\n";
+                    else
+                        std::cerr << "[PMI] trajectory plan failed\n";
+                    return;
+                }
+                if (cmd == pmi::kCmdStartTrajectoryIk) {
+                    planner.start();
+                    std::cerr << "[PMI] trajectory IK start\n";
+                    return;
+                }
+                if (cmd == pmi::kCmdStopTrajectoryIk) {
+                    planner.stop();
+                    std::cerr << "[PMI] trajectory IK stop\n";
+                    return;
+                }
+                if (cmd == pmi::kCmdSetInitialJointPose) {
+                    std::array<double, 4> qJointRad{};
+                    if (!parseInitialJointPosePayload(payload, qJointRad)) {
+                        std::cerr << "[PMI] invalid initial joint pose payload\n";
+                        return;
+                    }
+
+                    std::array<double, 4> qCurrentRad{};
+                    if (haveLatestTelemetry) {
+                        for (size_t i = 0; i < 4; ++i) {
+                            const double qCurrentJointDeg = latestAxes[i].present_position * kGear[i];
+                            qCurrentRad[i] = qCurrentJointDeg * M_PI / 180.0;
+                        }
+                    } else {
+                        // Fallback when telemetry has not been received yet.
+                        qCurrentRad = qJointRad;
+                    }
+
+                    initPoseMotion.active = true;
+                    initPoseMotion.startTime = now;
+                    initPoseMotion.qStartRad = qCurrentRad;
+                    initPoseMotion.qTargetRad = qJointRad;
+                    planner.stop();
+
+                    for (size_t i = 0; i < 4; ++i) {
+                        const double qJointDeg = qJointRad[i] * 180.0 / M_PI;
+                        latestAxes[i].goal_position = qJointDeg;
+                    }
+                    std::cerr << "[PMI] initial joint pose motion started (5s quintic)\n";
+                    return;
+                }
+                if (cmd == pmi::kCmdLogStart) {
+                    double durationSec = 0.0;
+                    if (!parseLogStartPayload(payload, durationSec)) {
+                        std::cerr << "[PMI] invalid log start payload\n";
+                        const std::string msg = "LOG_START_FAIL:invalid payload";
+                        (void)sendTelemetryFrameNonBlock(cfd, pmi::buildServerAckFrame(
+                                                              pmi::kSrvAck, std::vector<uint8_t>(msg.begin(), msg.end())));
+                        return;
+                    }
+                    if (!logger.start(durationSec)) {
+                        std::cerr << "[PMI] failed to start logger\n";
+                        const std::string msg = "LOG_START_FAIL:start failed";
+                        (void)sendTelemetryFrameNonBlock(cfd, pmi::buildServerAckFrame(
+                                                              pmi::kSrvAck, std::vector<uint8_t>(msg.begin(), msg.end())));
+                    } else {
+                        const std::string msg = std::string("LOG_START_OK:") + logger.currentLogPath();
+                        (void)sendTelemetryFrameNonBlock(cfd, pmi::buildServerAckFrame(
+                                                              pmi::kSrvAck, std::vector<uint8_t>(msg.begin(), msg.end())));
+                    }
+                    return;
+                }
+                if (cmd == pmi::kCmdLogStop) {
+                    logger.stop();
+                    const std::string msg = std::string("LOG_STOP_OK:") + logger.currentLogPath();
+                    (void)sendTelemetryFrameNonBlock(
+                        cfd, pmi::buildServerAckFrame(pmi::kSrvAck, std::vector<uint8_t>(msg.begin(), msg.end())));
+                    return;
+                }
                 if (m_dxl)
                     m_dxl->handlePmiClientCommand(cmd);
             });

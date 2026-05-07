@@ -37,6 +37,35 @@ All frames start with `SOF1 SOF2` and end with `EOF`.
 - `0x20`: Mode Current
 - `0x21`: Mode Velocity
 - `0x22`: Mode Extended Position
+- `0x30`: SetWaypointBatch
+- `0x31`: PlanPath
+- `0x32`: StartTrajectoryIK
+- `0x33`: StopTrajectoryIK
+- `0x34`: SetInitialJointPose
+- `0x40`: LogStart
+- `0x41`: LogStop
+
+### 2.4 Waypoint payload (`0x30`)
+
+- Layout: `[count][t0][x0][y0][z0]...[tN-1][xN-1][yN-1][zN-1]`
+- `count`: `uint8` (number of waypoints)
+- `t/x/y/z`: each `float64` little-endian
+- Total payload bytes: `1 + count * 32`
+- `t` is in seconds, must be strictly increasing.
+
+### 2.5 Initial joint pose payload (`0x34`)
+
+- Layout: `[q1][q2][q3][q4]`
+- `q1..q4`: each `float64` little-endian
+- Unit: joint radian (output-link side, before gear ratio conversion)
+
+### 2.6 Logging payload
+
+- `0x40` (`LogStart`) payload:
+  - Layout: `[duration_sec]`
+  - `duration_sec`: `float64` little-endian
+- `0x41` (`LogStop`) payload:
+  - No payload (`LEN=0`)
 
 ---
 
@@ -59,6 +88,18 @@ All frames start with `SOF1 SOF2` and end with `EOF`.
 ### 3.3 Checksum
 
 - Formula: `(LEN + sum(PAYLOAD)) & 0xFF`
+
+### 3.4 Server ACK frame (control/status)
+
+- Layout: `[SOF1][SOF2][MSG][LEN][DATA...][CHECKSUM][EOF]`
+- `MSG` currently uses `0xA0` (`kSrvAck`)
+- `CHECKSUM` formula: `(MSG + LEN + sum(DATA)) & 0xFF`
+- Used for status messages such as:
+  - `LOG_START_OK:<file_path>`
+  - `LOG_STOP_OK:<file_path>`
+  - `LOG_START_FAIL:<reason>`
+  - `INIT_POSE_PROGRESS:<percent>`
+  - `INIT_POSE_DONE`
 
 ---
 

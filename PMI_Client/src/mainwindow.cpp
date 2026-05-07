@@ -8,14 +8,18 @@
 #include <QAbstractItemView>
 #include <QByteArray>
 #include <QCloseEvent>
+#include <QDateTime>
 #include <QHeaderView>
 #include <QMessageBox>
 #include <QSettings>
 #include <QStandardItem>
 #include <QStandardItemModel>
+#include <QTableWidgetItem>
 #include <QTimer>
 
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <memory>
 #include <utility>
 
@@ -65,6 +69,18 @@ MainWindow::MainWindow(QWidget *parent)
             QTimer::singleShot(0, this, [this, qmsg]() { onNetError(qmsg); });
         });
     m_net->start();
+    m_logCountdownTimer = new QTimer(this);
+    m_logCountdownTimer->setInterval(100);
+    connect(m_logCountdownTimer, &QTimer::timeout, this, [this]() {
+        const qint64 remainMs = m_logEndMs - QDateTime::currentMSecsSinceEpoch();
+        if (remainMs <= 0) {
+            stopLogCountdown();
+            ui->labelLogStatus->setText(tr("Status: logging duration elapsed"));
+            return;
+        }
+        ui->labelLogStatus->setText(tr("Status: logging... %1 s left")
+                                        .arg(QString::number(static_cast<double>(remainMs) / 1000.0, 'f', 1)));
+    });
 
     connect(ui->btnConnect, &QPushButton::toggled, this, &MainWindow::onConnectToggled);
     connect(ui->btnServoOn, &QPushButton::clicked, this, &MainWindow::onServoOnClicked);
@@ -73,21 +89,60 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->btnCurrent, &QPushButton::clicked, this, &MainWindow::onModeCurrentClicked);
     connect(ui->btnVelocity, &QPushButton::clicked, this, &MainWindow::onModeVelocityClicked);
     connect(ui->btnPosition, &QPushButton::clicked, this, &MainWindow::onModeExtendedPosClicked);
+    connect(ui->btnSendWaypoints, &QPushButton::clicked, this, &MainWindow::onSendWaypointsClicked);
+    connect(ui->btnPlanPath, &QPushButton::clicked, this, &MainWindow::onPlanPathClicked);
+    connect(ui->btnTrajStart, &QPushButton::clicked, this, &MainWindow::onStartTrajectoryClicked);
+    connect(ui->btnTrajStop, &QPushButton::clicked, this, &MainWindow::onStopTrajectoryClicked);
+    connect(ui->btnSendInitialPose, &QPushButton::clicked, this, &MainWindow::onSendInitialPoseClicked);
+    connect(ui->btnLogStart, &QPushButton::clicked, this, &MainWindow::onLogStartClicked);
+    connect(ui->btnLogStop, &QPushButton::clicked, this, &MainWindow::onLogStopClicked);
 
     setUiConnected(false);
     setServoButtonState(false);
     setupTelemetryTable();
+    ui->waypointTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
 
     QSettings settings;
     const QByteArray geom = settings.value(QStringLiteral("mainwindow/geometry")).toByteArray();
     if (!geom.isEmpty())
         restoreGeometry(geom);
+    ui->initQ1Edit->setText(settings.value(QStringLiteral("trajectory/init_q1_rad"),
+                              settings.value(QStringLiteral("trajectory/init_q1_deg"), QStringLiteral("0.0"))).toString());
+    ui->initQ2Edit->setText(settings.value(QStringLiteral("trajectory/init_q2_rad"),
+                              settings.value(QStringLiteral("trajectory/init_q2_deg"), QStringLiteral("0.0"))).toString());
+    ui->initQ3Edit->setText(settings.value(QStringLiteral("trajectory/init_q3_rad"),
+                              settings.value(QStringLiteral("trajectory/init_q3_deg"), QStringLiteral("0.0"))).toString());
+    ui->initQ4Edit->setText(settings.value(QStringLiteral("trajectory/init_q4_rad"),
+                              settings.value(QStringLiteral("trajectory/init_q4_deg"), QStringLiteral("0.0"))).toString());
+    for (int r = 0; r < ui->waypointTable->rowCount(); ++r) {
+        for (int c = 0; c < ui->waypointTable->columnCount(); ++c) {
+            const QString key = QStringLiteral("trajectory/waypoint_r%1_c%2").arg(r).arg(c);
+            const QString v = settings.value(key, QString()).toString();
+            if (v.isEmpty())
+                continue;
+            if (!ui->waypointTable->item(r, c))
+                ui->waypointTable->setItem(r, c, new QTableWidgetItem(v));
+            else
+                ui->waypointTable->item(r, c)->setText(v);
+        }
+    }
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
     QSettings settings;
     settings.setValue(QStringLiteral("mainwindow/geometry"), saveGeometry());
+    settings.setValue(QStringLiteral("trajectory/init_q1_rad"), ui->initQ1Edit->text().trimmed());
+    settings.setValue(QStringLiteral("trajectory/init_q2_rad"), ui->initQ2Edit->text().trimmed());
+    settings.setValue(QStringLiteral("trajectory/init_q3_rad"), ui->initQ3Edit->text().trimmed());
+    settings.setValue(QStringLiteral("trajectory/init_q4_rad"), ui->initQ4Edit->text().trimmed());
+    for (int r = 0; r < ui->waypointTable->rowCount(); ++r) {
+        for (int c = 0; c < ui->waypointTable->columnCount(); ++c) {
+            const QString key = QStringLiteral("trajectory/waypoint_r%1_c%2").arg(r).arg(c);
+            const QTableWidgetItem *item = ui->waypointTable->item(r, c);
+            settings.setValue(key, item ? item->text().trimmed() : QString());
+        }
+    }
     QMainWindow::closeEvent(event);
 }
 
@@ -146,6 +201,21 @@ void MainWindow::setUiConnected(bool connected)
     ui->ipEdit->setEnabled(!connected);
     ui->portEdit->setEnabled(!connected);
     ui->btnConnect->setText(connected ? tr("Disconnect") : tr("Connect"));
+    ui->btnSendWaypoints->setEnabled(connected);
+    ui->btnSendInitialPose->setEnabled(connected);
+    ui->btnLogStart->setEnabled(connected);
+    ui->btnLogStop->setEnabled(connected);
+    if (!connected)
+        m_waypointSent = false;
+    updateTrajectoryButtonState(connected);
+}
+
+void MainWindow::updateTrajectoryButtonState(bool connected)
+{
+    const bool enabled = connected && m_waypointSent;
+    ui->btnPlanPath->setEnabled(enabled);
+    ui->btnTrajStart->setEnabled(enabled);
+    ui->btnTrajStop->setEnabled(enabled);
 }
 
 void MainWindow::sendClientCmd(uint8_t cmd)
@@ -167,10 +237,40 @@ void MainWindow::onNetBytesFromWorker(std::vector<uint8_t> chunk)
     auto shared = std::make_shared<std::vector<uint8_t>>(std::move(chunk));
     QTimer::singleShot(0, this, [this, shared]() {
         m_protocolRx.insert(m_protocolRx.end(), shared->begin(), shared->end());
-        pmi::pruneServerRxToLatestCompleteFrame(m_protocolRx);
-        pmi::feedServerRxStream(m_protocolRx, [this](const pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount]) {
-            updateTelemetryTable(axes);
-        });
+        pmi::feedServerMixedRxStream(
+            m_protocolRx,
+            [this](const pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount]) { updateTelemetryTable(axes); },
+            [this](uint8_t msg, const std::vector<uint8_t> &payload) {
+                if (msg != pmi::kSrvAck)
+                    return;
+                const QString text = QString::fromUtf8(reinterpret_cast<const char *>(payload.data()),
+                    static_cast<int>(payload.size()));
+                if (text.startsWith(QStringLiteral("LOG_START_OK:"))) {
+                    ui->labelLogStatus->setText(tr("Status: log file: %1").arg(text.mid(13)));
+                    return;
+                }
+                if (text.startsWith(QStringLiteral("LOG_STOP_OK:"))) {
+                    stopLogCountdown();
+                    ui->labelLogStatus->setText(tr("Status: logging stopped"));
+                    return;
+                }
+                if (text.startsWith(QStringLiteral("LOG_START_FAIL:"))) {
+                    stopLogCountdown();
+                    ui->labelLogStatus->setText(tr("Status: logging start failed (%1)").arg(text.mid(15)));
+                    return;
+                }
+                if (text.startsWith(QStringLiteral("INIT_POSE_PROGRESS:"))) {
+                    const double p = text.mid(19).toDouble();
+                    ui->labelTrajectoryStatus->setText(
+                        tr("Status: init pose moving (%1%)").arg(QString::number(p, 'f', 1)));
+                    return;
+                }
+                if (text == QStringLiteral("INIT_POSE_DONE")) {
+                    ui->labelTrajectoryStatus->setText(tr("Status: init pose completed (100.0%)"));
+                    return;
+                }
+                ui->labelLogStatus->setText(tr("Status: %1").arg(text));
+            });
     });
 }
 
@@ -242,6 +342,7 @@ void MainWindow::updateTelemetryTable(const pmi::ServoTelemetry axes[pmi::kTelem
         m_telemetryModel->item(row, 10)->setText(QString::number(t.goal_current, 'f', 4));
         m_telemetryModel->item(row, 11)->setText(QString::number(t.error_state));
     }
+
 }
 
 void MainWindow::onServoOnClicked()
@@ -279,4 +380,173 @@ void MainWindow::onModeVelocityClicked()
 void MainWindow::onModeExtendedPosClicked()
 {
     sendClientCmd(pmi::kCmdModeExtendedPos);
+}
+
+bool MainWindow::parseWaypointInput(std::vector<std::array<double, 4>> &waypoints, QString &error) const
+{
+    waypoints.clear();
+    const int rows = ui->waypointTable->rowCount();
+    for (int r = 0; r < rows; ++r) {
+        bool rowEmpty = true;
+        for (int c = 0; c < 4; ++c) {
+            const QTableWidgetItem *item = ui->waypointTable->item(r, c);
+            if (item && !item->text().trimmed().isEmpty()) {
+                rowEmpty = false;
+                break;
+            }
+        }
+        if (rowEmpty)
+            continue;
+
+        std::array<double, 4> wp{};
+        bool ok[4] = {false, false, false, false};
+        for (int k = 0; k < 4; ++k)
+            wp[static_cast<size_t>(k)] =
+                (ui->waypointTable->item(r, k) ? ui->waypointTable->item(r, k)->text().trimmed() : QString()).toDouble(&ok[k]);
+        if (!(ok[0] && ok[1] && ok[2] && ok[3])) {
+            error = tr("Row %1 contains invalid number").arg(r + 1);
+            return false;
+        }
+        waypoints.push_back(wp);
+    }
+
+    if (waypoints.size() < 2) {
+        error = tr("At least 2 waypoint rows are required.");
+        return false;
+    }
+    for (size_t i = 1; i < waypoints.size(); ++i) {
+        if (waypoints[i][0] <= waypoints[i - 1][0]) {
+            error = tr("Waypoint time must be strictly increasing.");
+            return false;
+        }
+    }
+    if (waypoints.size() > 7) {
+        error = tr("Current protocol supports up to 7 waypoints per packet.");
+        return false;
+    }
+    return true;
+}
+
+std::vector<uint8_t> MainWindow::buildWaypointPayload(const std::vector<std::array<double, 4>> &waypoints) const
+{
+    std::vector<uint8_t> payload;
+    payload.reserve(1 + waypoints.size() * 32);
+    payload.push_back(static_cast<uint8_t>(waypoints.size()));
+    for (const auto &wp : waypoints) {
+        for (double v : wp) {
+            std::uint64_t u = 0;
+            std::memcpy(&u, &v, sizeof(double));
+            for (int b = 0; b < 8; ++b)
+                payload.push_back(static_cast<uint8_t>((u >> (8 * b)) & 0xFFu));
+        }
+    }
+    return payload;
+}
+
+void MainWindow::onSendWaypointsClicked()
+{
+    std::vector<std::array<double, 4>> waypoints;
+    QString error;
+    if (!parseWaypointInput(waypoints, error)) {
+        QMessageBox::warning(this, tr("Waypoint error"), error);
+        return;
+    }
+    m_net->requestSend(pmi::buildClientFrame(pmi::kCmdSetWaypointBatch, buildWaypointPayload(waypoints)));
+    m_waypointSent = true;
+    updateTrajectoryButtonState(ui->btnConnect->isChecked());
+    ui->labelTrajectoryStatus->setText(tr("Status: waypoint sent (%1)").arg(static_cast<int>(waypoints.size())));
+}
+
+void MainWindow::onPlanPathClicked()
+{
+    sendClientCmd(pmi::kCmdPlanPath);
+    ui->labelTrajectoryStatus->setText(tr("Status: plan requested"));
+}
+
+void MainWindow::onStartTrajectoryClicked()
+{
+    sendClientCmd(pmi::kCmdStartTrajectoryIk);
+    ui->labelTrajectoryStatus->setText(tr("Status: trajectory running"));
+}
+
+void MainWindow::onStopTrajectoryClicked()
+{
+    sendClientCmd(pmi::kCmdStopTrajectoryIk);
+    ui->labelTrajectoryStatus->setText(tr("Status: trajectory stopped"));
+}
+
+bool MainWindow::parseInitialPose(std::array<double, 4> &jointRad, QString &error) const
+{
+    const QLineEdit *edits[4] = {ui->initQ1Edit, ui->initQ2Edit, ui->initQ3Edit, ui->initQ4Edit};
+    for (int i = 0; i < 4; ++i) {
+        bool ok = false;
+        const double v = edits[i]->text().trimmed().toDouble(&ok);
+        if (!ok) {
+            error = tr("q%1 is invalid. Enter radian value.").arg(i + 1);
+            return false;
+        }
+        jointRad[static_cast<size_t>(i)] = v;
+    }
+    return true;
+}
+
+void MainWindow::onSendInitialPoseClicked()
+{
+    std::array<double, 4> qJointRad{};
+    QString error;
+    if (!parseInitialPose(qJointRad, error)) {
+        QMessageBox::warning(this, tr("Initial pose error"), error);
+        return;
+    }
+
+    std::vector<uint8_t> payload;
+    payload.reserve(32);
+    for (double v : qJointRad) {
+        std::uint64_t u = 0;
+        std::memcpy(&u, &v, sizeof(double));
+        for (int b = 0; b < 8; ++b)
+            payload.push_back(static_cast<uint8_t>((u >> (8 * b)) & 0xFFu));
+    }
+    m_net->requestSend(pmi::buildClientFrame(pmi::kCmdSetInitialJointPose, payload));
+    ui->labelTrajectoryStatus->setText(tr("Status: initial pose sent"));
+}
+
+void MainWindow::onLogStartClicked()
+{
+    bool ok = false;
+    const double durationSec = ui->logDurationEdit->text().trimmed().toDouble(&ok);
+    if (!ok || durationSec <= 0.0) {
+        QMessageBox::warning(this, tr("Logging error"), tr("Enter a valid logging duration in seconds."));
+        return;
+    }
+    std::vector<uint8_t> payload;
+    payload.reserve(8);
+    std::uint64_t u = 0;
+    std::memcpy(&u, &durationSec, sizeof(double));
+    for (int b = 0; b < 8; ++b)
+        payload.push_back(static_cast<uint8_t>((u >> (8 * b)) & 0xFFu));
+    m_net->requestSend(pmi::buildClientFrame(pmi::kCmdLogStart, payload));
+    startLogCountdown(durationSec);
+    ui->labelLogStatus->setText(tr("Status: logging start requested (%1 s)").arg(durationSec, 0, 'f', 1));
+}
+
+void MainWindow::onLogStopClicked()
+{
+    sendClientCmd(pmi::kCmdLogStop);
+    stopLogCountdown();
+    ui->labelLogStatus->setText(tr("Status: logging stop requested"));
+}
+
+void MainWindow::startLogCountdown(double durationSec)
+{
+    m_logEndMs = QDateTime::currentMSecsSinceEpoch() + static_cast<qint64>(durationSec * 1000.0);
+    if (m_logCountdownTimer)
+        m_logCountdownTimer->start();
+}
+
+void MainWindow::stopLogCountdown()
+{
+    if (m_logCountdownTimer && m_logCountdownTimer->isActive())
+        m_logCountdownTimer->stop();
+    m_logEndMs = 0;
 }

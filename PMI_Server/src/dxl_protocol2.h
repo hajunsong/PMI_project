@@ -36,6 +36,7 @@ public:
 
     /// Torque / operating mode via GroupSyncWrite.
     void handlePmiClientCommand(uint8_t cmd);
+    bool writeGoalPositionDeg(const std::array<double, pmi::kTelemetryAxisCount> &motorDeg);
 
 private:
     void closeUnlocked();

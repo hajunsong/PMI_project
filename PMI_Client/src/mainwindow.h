@@ -5,6 +5,7 @@
 
 #include <QMainWindow>
 
+#include <array>
 #include <memory>
 #include <vector>
 
@@ -12,6 +13,7 @@
 
 class QCloseEvent;
 class QStandardItemModel;
+class QTimer;
 
 namespace Ui {
 class MainWindow;
@@ -41,6 +43,13 @@ private slots:
     void onModeCurrentClicked();
     void onModeVelocityClicked();
     void onModeExtendedPosClicked();
+    void onSendWaypointsClicked();
+    void onPlanPathClicked();
+    void onStartTrajectoryClicked();
+    void onStopTrajectoryClicked();
+    void onSendInitialPoseClicked();
+    void onLogStartClicked();
+    void onLogStopClicked();
 
 private:
     void setUiConnected(bool connected);
@@ -50,12 +59,21 @@ private:
     void updateTelemetryTable(const pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount]);
     void clearTelemetryTable();
     void setServoButtonState(bool servoOn);
+    void updateTrajectoryButtonState(bool connected);
+    void startLogCountdown(double durationSec);
+    void stopLogCountdown();
+    bool parseWaypointInput(std::vector<std::array<double, 4>> &waypoints, QString &error) const;
+    std::vector<uint8_t> buildWaypointPayload(const std::vector<std::array<double, 4>> &waypoints) const;
+    bool parseInitialPose(std::array<double, 4> &jointRad, QString &error) const;
 
     std::unique_ptr<Ui::MainWindow> ui;
     std::unique_ptr<TcpClient> m_net;
     QStandardItemModel *m_telemetryModel = nullptr;
     std::vector<uint8_t> m_protocolRx;
     bool m_servoOn = false;
+    bool m_waypointSent = false;
+    QTimer *m_logCountdownTimer = nullptr;
+    qint64 m_logEndMs = 0;
 };
 
 #endif

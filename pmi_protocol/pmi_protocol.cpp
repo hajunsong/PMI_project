@@ -96,6 +96,22 @@ std::vector<uint8_t> buildServerFrame(const ServoTelemetry axes[kTelemetryAxisCo
     return frame;
 }
 
+std::vector<uint8_t> buildServerAckFrame(uint8_t msg, const std::vector<uint8_t> &data)
+{
+    const size_t n = data.size() > 255 ? 255 : data.size();
+    const uint8_t len = static_cast<uint8_t>(n);
+    std::vector<uint8_t> out;
+    out.reserve(static_cast<size_t>(6) + n);
+    out.push_back(kSof1);
+    out.push_back(kSof2);
+    out.push_back(msg);
+    out.push_back(len);
+    out.insert(out.end(), data.begin(), data.begin() + static_cast<std::ptrdiff_t>(n));
+    out.push_back(checksumClientPayload(msg, len, n ? data.data() : nullptr));
+    out.push_back(kFrameEof);
+    return out;
+}
+
 bool parseServerFrame(const uint8_t *frame, size_t frameLen, ServoTelemetry axesOut[kTelemetryAxisCount])
 {
     if (frameLen != kServerFrameBytes)
@@ -202,6 +218,58 @@ void feedClientRxStream(std::vector<uint8_t> &rx, const ClientFrameHandler &onFr
                     rx.begin() + static_cast<std::ptrdiff_t>(i + 4 + len));
             if (onFrame)
                 onFrame(cmd, payload);
+            rx.erase(rx.begin(), rx.begin() + static_cast<std::ptrdiff_t>(i + frameTotal));
+            i = 0;
+            continue;
+        }
+        ++i;
+    }
+    if (i > 0)
+        rx.erase(rx.begin(), rx.begin() + static_cast<std::ptrdiff_t>(i));
+}
+
+void feedServerMixedRxStream(std::vector<uint8_t> &rx, const ServerFrameHandler &onTelemetry, const ServerAckHandler &onAck)
+{
+    size_t i = 0;
+    while (i + 3 <= rx.size()) {
+        if (rx[i] != kSof1 || rx[i + 1] != kSof2) {
+            ++i;
+            continue;
+        }
+        const uint8_t tag = rx[i + 2];
+        if (tag == static_cast<uint8_t>(kServerPayloadBytes)) {
+            if (i + kServerFrameBytes > rx.size())
+                break;
+            ServoTelemetry axes[kTelemetryAxisCount]{};
+            if (parseServerFrame(rx.data() + i, kServerFrameBytes, axes)) {
+                if (onTelemetry)
+                    onTelemetry(axes);
+                rx.erase(rx.begin(), rx.begin() + static_cast<std::ptrdiff_t>(i + kServerFrameBytes));
+                i = 0;
+                continue;
+            }
+            ++i;
+            continue;
+        }
+        if (i + 6 > rx.size())
+            break;
+        const uint8_t msg = rx[i + 2];
+        const uint8_t len = rx[i + 3];
+        const size_t frameTotal = static_cast<size_t>(6) + len;
+        if (i + frameTotal > rx.size())
+            break;
+        const uint8_t *dataPtr = (len > 0) ? (rx.data() + i + 4) : nullptr;
+        const uint8_t cs = rx[i + 4 + len];
+        const uint8_t eof = rx[i + 5 + len];
+        const uint8_t expectCs = checksumClientPayload(msg, len, dataPtr);
+        if (eof == kFrameEof && cs == expectCs) {
+            if (onAck) {
+                std::vector<uint8_t> payload;
+                if (len > 0)
+                    payload.assign(rx.begin() + static_cast<std::ptrdiff_t>(i + 4),
+                        rx.begin() + static_cast<std::ptrdiff_t>(i + 4 + len));
+                onAck(msg, payload);
+            }
             rx.erase(rx.begin(), rx.begin() + static_cast<std::ptrdiff_t>(i + frameTotal));
             i = 0;
             continue;

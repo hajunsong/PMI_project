@@ -21,6 +21,14 @@ constexpr uint8_t kCmdSetZero = 0x12;
 constexpr uint8_t kCmdModeCurrent = 0x20;
 constexpr uint8_t kCmdModeVelocity = 0x21;
 constexpr uint8_t kCmdModeExtendedPos = 0x22;
+constexpr uint8_t kCmdSetWaypointBatch = 0x30;
+constexpr uint8_t kCmdPlanPath = 0x31;
+constexpr uint8_t kCmdStartTrajectoryIk = 0x32;
+constexpr uint8_t kCmdStopTrajectoryIk = 0x33;
+constexpr uint8_t kCmdSetInitialJointPose = 0x34;
+constexpr uint8_t kCmdLogStart = 0x40;
+constexpr uint8_t kCmdLogStop = 0x41;
+constexpr uint8_t kSrvAck = 0xA0;
 
 constexpr uint8_t kSof1 = 0xAA;
 constexpr uint8_t kSof2 = 0x55;
@@ -72,14 +80,17 @@ uint8_t checksumServerPayload(uint8_t lenByte, const uint8_t *payload, size_t pa
 
 std::vector<uint8_t> buildClientFrame(uint8_t cmd, const std::vector<uint8_t> &data);
 std::vector<uint8_t> buildServerFrame(const ServoTelemetry axes[kTelemetryAxisCount]);
+std::vector<uint8_t> buildServerAckFrame(uint8_t msg, const std::vector<uint8_t> &data);
 
 bool parseServerFrame(const uint8_t *frame, size_t frameLen, ServoTelemetry axesOut[kTelemetryAxisCount]);
 
 using ClientFrameHandler = std::function<void(uint8_t cmd, const std::vector<uint8_t> &payload)>;
 using ServerFrameHandler = std::function<void(const ServoTelemetry axes[kTelemetryAxisCount])>;
+using ServerAckHandler = std::function<void(uint8_t msg, const std::vector<uint8_t> &payload)>;
 
 void feedClientRxStream(std::vector<uint8_t> &rx, const ClientFrameHandler &onFrame);
 void feedServerRxStream(std::vector<uint8_t> &rx, const ServerFrameHandler &onFrame);
+void feedServerMixedRxStream(std::vector<uint8_t> &rx, const ServerFrameHandler &onTelemetry, const ServerAckHandler &onAck);
 
 void pruneServerRxToLatestCompleteFrame(std::vector<uint8_t> &rx);
 

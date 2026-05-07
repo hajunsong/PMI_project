@@ -31,6 +31,7 @@ constexpr uint16_t kAddrOperatingMode = 11;
 constexpr uint16_t kAddrTorqueEnable = 64;
 constexpr uint16_t kAddrHardwareError = 70;
 constexpr uint16_t kAddrGoalCurrent = 102;
+constexpr uint16_t kAddrGoalPosition = 116;
 constexpr uint16_t kAddrPresentCurrent = 126;
 
 // XM540-W270 (Protocol 2.0) raw → SI-style for client: deg, deg/s, A. See e-Manual control table.
@@ -459,6 +460,29 @@ void DxlBus::handlePmiClientCommand(uint8_t cmd)
     default:
         break;
     }
+}
+
+bool DxlBus::writeGoalPositionDeg(const std::array<double, pmi::kTelemetryAxisCount> &motorDeg)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!port_ || !packet_)
+        return false;
+
+    std::array<std::array<uint8_t, 4>, pmi::kTelemetryAxisCount> params{};
+    for (size_t i = 0; i < pmi::kTelemetryAxisCount; ++i) {
+        const int32_t pulse = static_cast<int32_t>(std::llround(motorDeg[i] / kPulseToDeg));
+        const uint32_t raw = static_cast<uint32_t>(pulse);
+        params[i][0] = static_cast<uint8_t>(raw & 0xFFu);
+        params[i][1] = static_cast<uint8_t>((raw >> 8) & 0xFFu);
+        params[i][2] = static_cast<uint8_t>((raw >> 16) & 0xFFu);
+        params[i][3] = static_cast<uint8_t>((raw >> 24) & 0xFFu);
+    }
+
+    dynamixel::GroupSyncWrite gsw(port_, packet_, kAddrGoalPosition, 4);
+    for (size_t i = 0; i < pmi::kTelemetryAxisCount; ++i)
+        (void)gsw.addParam(kMotorIds[i], params[i].data());
+
+    return gsw.txPacket() == COMM_SUCCESS;
 }
 
 std::string DxlBus::zeroOffsetFilePath() const
