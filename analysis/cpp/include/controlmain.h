@@ -87,7 +87,6 @@ private:
     std::array<Eigen::Matrix3d, 4> dAe_dq;
     Eigen::Matrix<scalar, 2, 4> jac_rp;
     Eigen::Matrix<scalar, 5, 4> J;
-    Eigen::Matrix<scalar, 5, 5> JJT_reg;
 
     /** ``Y``가 주어지면 해당 상태로 ``self.Y``를 두고 ``[dq, ddq]``를 반환 (RK4 스테이지). */
     vec8 analysis(const vec8& Y_in);

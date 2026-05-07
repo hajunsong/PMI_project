@@ -385,36 +385,36 @@ void ControlMain::run_vsd(){
 void ControlMain::run_ik(){
     h = 0.001;
     t_c = 0;
-    t_e = 3.5;
+    t_e = 1.5;
 
     read_data();
 
     // Python: Path(main.py).parent / "../recurdyn/rec_data_path.csv" → analysis/recurdyn/...
     // __FILE__ = analysis/cpp/src/controlmain.cpp → parent×3 = analysis/
-    // const std::filesystem::path csv_path =
-    //     std::filesystem::weakly_canonical(
-    //         std::filesystem::path(__FILE__).parent_path().parent_path().parent_path())
-    //     / "recurdyn"
-    //     / "rec_data_path.csv";
-    // if (!load_recurdyn_csv(csv_path, rec_data)) {
-    //     std::cerr << "load rec_data.csv failed: " << csv_path << '\n';
-    // }
+    const std::filesystem::path csv_path =
+        std::filesystem::weakly_canonical(
+            std::filesystem::path(__FILE__).parent_path().parent_path().parent_path())
+        / "recurdyn"
+        / "rec_data_path2.csv";
+    if (!load_recurdyn_csv(csv_path, rec_data)) {
+        std::cerr << "load rec_data.csv failed: " << csv_path << '\n';
+    }
 
-    double wp_t[8] = {0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5};
-    double wp_x[8] = {0, -0.25, -0.35, -0.18, 0.18, 0.35, 0.25, 0};
-    double wp_y[8] = {0.33716302, -0.28, 0.15, 0.37, 0.37, 0.15, -0.28, 0.33716302};
-    double wp_z[8] = {0.2987143, 0, 0, 0.13, 0.13, 0, 0, 0.2987143};
+    double wp_t[4] = {0.0, 0.5, 1.0, 1.5};
+    double wp_x[4] = {-0.35, -0.25, 0.25, 0.35};
+    double wp_y[4] = {0.15, -0.28, -0.28, 0.15};
+    double wp_z[4] = {0, 0, 0, 0};
 
     std::vector< std::array<double, 3> > path_x, path_y, path_z;
-    path_x = path_build(wp_t, wp_x, 8, 0.0, h, true);
-    path_y = path_build(wp_t, wp_y, 8, 0.0, h, true);
-    path_z = path_build(wp_t, wp_z, 8, 0.0, h, true);
+    path_x = path_build(wp_t, wp_x, 4, 0.0, h, true);
+    path_y = path_build(wp_t, wp_y, 4, 0.0, h, true);
+    path_z = path_build(wp_t, wp_z, 4, 0.0, h, true);
 
     std::cout << "path len x/y/z : " << path_x.size() << ", " << path_y.size() << ", " << path_z.size() << std::endl;
 
-    double q_init[NB] = {-90, 30, 45, -105};
-    for(int i = 0; i < NB; i++){
-        body[i].qi = q_init[i]*M_PI/180.0;
+    double q_init[4] = {-2.7367009, 1.0880061, 1.1749032, -0.87868275};
+    for(int i = 0; i < 4; i++){
+        body[i].qi = q_init[i];
     }
 
     open_log("cpp_data_path.csv");
@@ -430,7 +430,9 @@ void ControlMain::run_ik(){
     scalar des_roll, des_pitch, err_roll, err_pitch;
     Eigen::Matrix<scalar, 5, 1> err;
     Eigen::Matrix<scalar, 5, 1> des_vel;
-    double err_tol = 1e-3;
+    const double err_tol_pos_mm = env_or_default("PMI_IK_TOL_POS_MM", 0.1);
+    const double err_tol_ori_rad = env_or_default("PMI_IK_TOL_ORI_RAD", 1e-3);
+    const double err_tol_pos_m = err_tol_pos_mm * 1e-3;
     double damping = 1e-7;
     double alpha = 0.6;
     using mat5 = Eigen::Matrix<scalar, 5, 5>;
@@ -455,7 +457,7 @@ void ControlMain::run_ik(){
         while(true){
             J = jacobian_calculation();
 
-            JJT_reg = J * J.transpose() + (damping * damping) * mat5::Identity();
+            const mat5 JJT_reg = J * J.transpose() + (damping * damping) * mat5::Identity();
             Eigen::PartialPivLU<mat5> lu(JJT_reg);
             delta_q = alpha * J.transpose() * lu.solve(err);
             q_dot = J.transpose() * lu.solve(des_vel);
@@ -478,7 +480,11 @@ void ControlMain::run_ik(){
                 std::cout << "IK failed to converge" << std::endl;
                 break;
             }
-            if(err.norm() < err_tol) break;
+            if (err_pos.norm() <= err_tol_pos_m
+                && std::abs(err_roll) <= err_tol_ori_rad
+                && std::abs(err_pitch) <= err_tol_ori_rad) {
+                break;
+            }
         }
 
         // Save the post-IK achieved position error for this step.
