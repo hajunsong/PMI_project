@@ -8,10 +8,12 @@
 #include <QAbstractItemView>
 #include <QByteArray>
 #include <QCloseEvent>
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QHeaderView>
 #include <QMessageBox>
 #include <QSettings>
+#include <QStringList>
 #include <QStandardItem>
 #include <QStandardItemModel>
 #include <QTableWidgetItem>
@@ -20,6 +22,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <utility>
 
@@ -43,6 +46,51 @@ QString opModeToText(uint8_t op)
     default:
         return QStringLiteral("Unknown (%1)").arg(op);
     }
+}
+
+double toJointDeg(size_t axis, double motorDeg)
+{
+    constexpr double kGear[4] = {32.0 / 60.0, 54.0 / 360.0, 108.0 / 360.0, 108.0 / 360.0};
+    if (axis >= 4 || !std::isfinite(motorDeg))
+        return std::numeric_limits<double>::quiet_NaN();
+    return motorDeg * kGear[axis];
+}
+
+/// DYNAMIXEL X 시리즈 Address 70 (Hardware Error Status) 비트 해석 (XM540 등).
+QString hardwareErrorToText(uint8_t hw)
+{
+    if (hw == 0)
+        return QCoreApplication::translate("MainWindow", "정상");
+
+    QStringList parts;
+    if (hw & 0x01)
+        parts.append(QCoreApplication::translate("MainWindow", "입력 전압"));
+    if (hw & 0x04)
+        parts.append(QCoreApplication::translate("MainWindow", "과열"));
+    if (hw & 0x08)
+        parts.append(QCoreApplication::translate("MainWindow", "모터 엔코더"));
+    if (hw & 0x10)
+        parts.append(QCoreApplication::translate("MainWindow", "전기적 충격"));
+    if (hw & 0x20)
+        parts.append(QCoreApplication::translate("MainWindow", "과부하"));
+
+    const uint8_t knownMask = 0x01u | 0x04u | 0x08u | 0x10u | 0x20u;
+    const uint8_t unknown = static_cast<uint8_t>(hw & ~knownMask);
+    if (unknown != 0) {
+        parts.append(QCoreApplication::translate("MainWindow", "기타(0x%1)")
+                         .arg(unknown, 2, 16, QChar('0'))
+                         .toUpper());
+    }
+
+    if (parts.isEmpty())
+        return QCoreApplication::translate("MainWindow", "알 수 없음 (0x%1)")
+            .arg(hw, 2, 16, QChar('0'))
+            .toUpper();
+
+    return parts.join(QStringLiteral(", "))
+        + QStringLiteral(" (0x")
+        + QString::number(hw, 16).toUpper().rightJustified(2, QChar('0'))
+        + QChar(')');
 }
 
 } // namespace
@@ -86,14 +134,20 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->btnServoOn, &QPushButton::clicked, this, &MainWindow::onServoOnClicked);
     connect(ui->btnStop, &QPushButton::clicked, this, &MainWindow::onStopClicked);
     connect(ui->btnZero, &QPushButton::clicked, this, &MainWindow::onZeroClicked);
+    connect(ui->btnReset, &QPushButton::clicked, this, &MainWindow::onResetClicked);
     connect(ui->btnCurrent, &QPushButton::clicked, this, &MainWindow::onModeCurrentClicked);
     connect(ui->btnVelocity, &QPushButton::clicked, this, &MainWindow::onModeVelocityClicked);
     connect(ui->btnPosition, &QPushButton::clicked, this, &MainWindow::onModeExtendedPosClicked);
+    connect(ui->btnCurrentBasedPosition, &QPushButton::clicked, this, &MainWindow::onModeCurrentBasedPosClicked);
+    connect(ui->btnJogPlus, &QPushButton::clicked, this, &MainWindow::onJogPlusClicked);
+    connect(ui->btnJogMinus, &QPushButton::clicked, this, &MainWindow::onJogMinusClicked);
+    connect(ui->btnJogStop, &QPushButton::clicked, this, &MainWindow::onJogStopClicked);
     connect(ui->btnSendWaypoints, &QPushButton::clicked, this, &MainWindow::onSendWaypointsClicked);
     connect(ui->btnPlanPath, &QPushButton::clicked, this, &MainWindow::onPlanPathClicked);
     connect(ui->btnTrajStart, &QPushButton::clicked, this, &MainWindow::onStartTrajectoryClicked);
     connect(ui->btnTrajStop, &QPushButton::clicked, this, &MainWindow::onStopTrajectoryClicked);
     connect(ui->btnSendInitialPose, &QPushButton::clicked, this, &MainWindow::onSendInitialPoseClicked);
+    connect(ui->btnSendZeroPose, &QPushButton::clicked, this, &MainWindow::onSendZeroPoseClicked);
     connect(ui->btnLogStart, &QPushButton::clicked, this, &MainWindow::onLogStartClicked);
     connect(ui->btnLogStop, &QPushButton::clicked, this, &MainWindow::onLogStopClicked);
 
@@ -101,19 +155,21 @@ MainWindow::MainWindow(QWidget *parent)
     setServoButtonState(false);
     setupTelemetryTable();
     ui->waypointTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    ui->jogSpeedEdit->setReadOnly(true);
+    ui->jogSpeedEdit->setText(QStringLiteral("0.0"));
 
     QSettings settings;
     const QByteArray geom = settings.value(QStringLiteral("mainwindow/geometry")).toByteArray();
     if (!geom.isEmpty())
         restoreGeometry(geom);
-    ui->initQ1Edit->setText(settings.value(QStringLiteral("trajectory/init_q1_rad"),
-                              settings.value(QStringLiteral("trajectory/init_q1_deg"), QStringLiteral("0.0"))).toString());
-    ui->initQ2Edit->setText(settings.value(QStringLiteral("trajectory/init_q2_rad"),
-                              settings.value(QStringLiteral("trajectory/init_q2_deg"), QStringLiteral("0.0"))).toString());
-    ui->initQ3Edit->setText(settings.value(QStringLiteral("trajectory/init_q3_rad"),
-                              settings.value(QStringLiteral("trajectory/init_q3_deg"), QStringLiteral("0.0"))).toString());
-    ui->initQ4Edit->setText(settings.value(QStringLiteral("trajectory/init_q4_rad"),
-                              settings.value(QStringLiteral("trajectory/init_q4_deg"), QStringLiteral("0.0"))).toString());
+    ui->initQ1Edit->setText(settings.value(QStringLiteral("trajectory/init_q1_deg"),
+                              settings.value(QStringLiteral("trajectory/init_q1_rad"), QStringLiteral("0.0"))).toString());
+    ui->initQ2Edit->setText(settings.value(QStringLiteral("trajectory/init_q2_deg"),
+                              settings.value(QStringLiteral("trajectory/init_q2_rad"), QStringLiteral("0.0"))).toString());
+    ui->initQ3Edit->setText(settings.value(QStringLiteral("trajectory/init_q3_deg"),
+                              settings.value(QStringLiteral("trajectory/init_q3_rad"), QStringLiteral("0.0"))).toString());
+    ui->initQ4Edit->setText(settings.value(QStringLiteral("trajectory/init_q4_deg"),
+                              settings.value(QStringLiteral("trajectory/init_q4_rad"), QStringLiteral("0.0"))).toString());
     for (int r = 0; r < ui->waypointTable->rowCount(); ++r) {
         for (int c = 0; c < ui->waypointTable->columnCount(); ++c) {
             const QString key = QStringLiteral("trajectory/waypoint_r%1_c%2").arg(r).arg(c);
@@ -132,10 +188,10 @@ void MainWindow::closeEvent(QCloseEvent *event)
 {
     QSettings settings;
     settings.setValue(QStringLiteral("mainwindow/geometry"), saveGeometry());
-    settings.setValue(QStringLiteral("trajectory/init_q1_rad"), ui->initQ1Edit->text().trimmed());
-    settings.setValue(QStringLiteral("trajectory/init_q2_rad"), ui->initQ2Edit->text().trimmed());
-    settings.setValue(QStringLiteral("trajectory/init_q3_rad"), ui->initQ3Edit->text().trimmed());
-    settings.setValue(QStringLiteral("trajectory/init_q4_rad"), ui->initQ4Edit->text().trimmed());
+    settings.setValue(QStringLiteral("trajectory/init_q1_deg"), ui->initQ1Edit->text().trimmed());
+    settings.setValue(QStringLiteral("trajectory/init_q2_deg"), ui->initQ2Edit->text().trimmed());
+    settings.setValue(QStringLiteral("trajectory/init_q3_deg"), ui->initQ3Edit->text().trimmed());
+    settings.setValue(QStringLiteral("trajectory/init_q4_deg"), ui->initQ4Edit->text().trimmed());
     for (int r = 0; r < ui->waypointTable->rowCount(); ++r) {
         for (int c = 0; c < ui->waypointTable->columnCount(); ++c) {
             const QString key = QStringLiteral("trajectory/waypoint_r%1_c%2").arg(r).arg(c);
@@ -203,8 +259,14 @@ void MainWindow::setUiConnected(bool connected)
     ui->btnConnect->setText(connected ? tr("Disconnect") : tr("Connect"));
     ui->btnSendWaypoints->setEnabled(connected);
     ui->btnSendInitialPose->setEnabled(connected);
+    ui->btnSendZeroPose->setEnabled(connected);
     ui->btnLogStart->setEnabled(connected);
     ui->btnLogStop->setEnabled(connected);
+    ui->jogAxisCombo->setEnabled(connected);
+    ui->jogSpeedEdit->setEnabled(connected);
+    ui->btnJogPlus->setEnabled(connected);
+    ui->btnJogMinus->setEnabled(connected);
+    ui->btnJogStop->setEnabled(connected);
     if (!connected)
         m_waypointSent = false;
     updateTrajectoryButtonState(connected);
@@ -269,6 +331,24 @@ void MainWindow::onNetBytesFromWorker(std::vector<uint8_t> chunk)
                     ui->labelTrajectoryStatus->setText(tr("Status: init pose completed (100.0%)"));
                     return;
                 }
+                if (text.startsWith(QStringLiteral("PLAN_OK_CLIPPED:"))) {
+                    const QString rest = text.mid(16);
+                    const int atIdx = rest.indexOf(QLatin1Char('@'));
+                    const QString samples = (atIdx > 0) ? rest.left(atIdx) : rest;
+                    const QString clippedAt = (atIdx > 0) ? rest.mid(atIdx + 1) : QStringLiteral("?");
+                    ui->labelTrajectoryStatus->setText(
+                        tr("Status: planned %1 samples — clipped to joint limits (first @ %2)")
+                            .arg(samples).arg(clippedAt));
+                    return;
+                }
+                if (text.startsWith(QStringLiteral("PLAN_OK:"))) {
+                    ui->labelTrajectoryStatus->setText(tr("Status: planned %1 samples").arg(text.mid(8)));
+                    return;
+                }
+                if (text == QStringLiteral("PLAN_FAIL")) {
+                    ui->labelTrajectoryStatus->setText(tr("Status: plan failed"));
+                    return;
+                }
                 ui->labelLogStatus->setText(tr("Status: %1").arg(text));
             });
     });
@@ -285,12 +365,12 @@ void MainWindow::setupTelemetryTable()
         tr("State"),
         tr("Motor Position (deg)"),
         tr("Encoder Position (deg)"),
+        tr("Joint Position (deg)"),
         tr("Motor Velocity (deg/s)"),
         tr("Motor Current (A)"),
-        tr("Goal Position (deg)"),
         tr("Goal Velocity (deg/s)"),
         tr("Goal Current (A)"),
-        tr("Error"),
+        tr("HW Error"),
     });
 
     const QString dash = QStringLiteral("—");
@@ -335,12 +415,15 @@ void MainWindow::updateTelemetryTable(const pmi::ServoTelemetry axes[pmi::kTelem
         m_telemetryModel->item(row, 4)->setText(QString::number(t.present_position, 'f', 4));
         m_telemetryModel->item(row, 5)->setText(std::isfinite(t.encoder_position) ? QString::number(t.encoder_position, 'f', 4)
                                                                                    : QStringLiteral("—"));
-        m_telemetryModel->item(row, 6)->setText(QString::number(t.present_velocity, 'f', 4));
-        m_telemetryModel->item(row, 7)->setText(QString::number(t.present_current, 'f', 4));
-        m_telemetryModel->item(row, 8)->setText(QString::number(t.goal_position, 'f', 4));
+        // External encoder is treated as joint-side angle; use gear conversion only for motor-side fallback.
+        const double jointDeg = std::isfinite(t.encoder_position) ? t.encoder_position
+                                                                   : toJointDeg(static_cast<size_t>(row), t.present_position);
+        m_telemetryModel->item(row, 6)->setText(std::isfinite(jointDeg) ? QString::number(jointDeg, 'f', 4) : QStringLiteral("—"));
+        m_telemetryModel->item(row, 7)->setText(QString::number(t.present_velocity, 'f', 4));
+        m_telemetryModel->item(row, 8)->setText(QString::number(t.present_current, 'f', 4));
         m_telemetryModel->item(row, 9)->setText(QString::number(t.goal_velocity, 'f', 4));
         m_telemetryModel->item(row, 10)->setText(QString::number(t.goal_current, 'f', 4));
-        m_telemetryModel->item(row, 11)->setText(QString::number(t.error_state));
+        m_telemetryModel->item(row, 11)->setText(hardwareErrorToText(t.error_state));
     }
 
 }
@@ -358,13 +441,24 @@ void MainWindow::onServoOnClicked()
 
 void MainWindow::onStopClicked()
 {
-    sendClientCmd(pmi::kCmdStop);
-    setServoButtonState(false);
+    // Hold at current joint pose and reset the planned path on the server.
+    // Torque stays ON, so don't toggle the servo button.
+    sendClientCmd(pmi::kCmdHoldStop);
+    m_waypointSent = false;
+    updateTrajectoryButtonState(ui->btnConnect->isChecked());
+    ui->labelTrajectoryStatus->setText(tr("Status: stopped (waypoints cleared, holding pose)"));
 }
 
 void MainWindow::onZeroClicked()
 {
     sendClientCmd(pmi::kCmdSetZero);
+}
+
+void MainWindow::onResetClicked()
+{
+    sendClientCmd(pmi::kCmdResetError);
+    // Server reboots all axes (~800 ms). Torque comes back OFF — reflect that locally.
+    setServoButtonState(false);
 }
 
 void MainWindow::onModeCurrentClicked()
@@ -380,6 +474,74 @@ void MainWindow::onModeVelocityClicked()
 void MainWindow::onModeExtendedPosClicked()
 {
     sendClientCmd(pmi::kCmdModeExtendedPos);
+}
+
+void MainWindow::onModeCurrentBasedPosClicked()
+{
+    sendClientCmd(pmi::kCmdModeCurrentBasedPos);
+}
+
+bool MainWindow::sendJogVelocityCommand(double signedJointVelDegPerSec, QString *errorOut)
+{
+    if (!ui->btnConnect->isChecked()) {
+        if (errorOut)
+            *errorOut = tr("Server is not connected.");
+        return false;
+    }
+
+    const int axis = ui->jogAxisCombo->currentIndex();
+    if (axis < 0 || axis >= static_cast<int>(pmi::kTelemetryAxisCount)) {
+        if (errorOut)
+            *errorOut = tr("Invalid jog axis selection.");
+        return false;
+    }
+
+    std::vector<uint8_t> payload;
+    payload.reserve(9);
+    payload.push_back(static_cast<uint8_t>(axis));
+    std::uint64_t u = 0;
+    std::memcpy(&u, &signedJointVelDegPerSec, sizeof(double));
+    for (int b = 0; b < 8; ++b)
+        payload.push_back(static_cast<uint8_t>((u >> (8 * b)) & 0xFFu));
+
+    m_net->requestSend(pmi::buildClientFrame(pmi::kCmdJogVelocity, payload));
+    return true;
+}
+
+void MainWindow::onJogPlusClicked()
+{
+    bool ok = false;
+    const double current = ui->jogSpeedEdit->text().trimmed().toDouble(&ok);
+    const double next = (ok ? current : 0.0) + 1.0;
+    QString error;
+    if (!sendJogVelocityCommand(next, &error)) {
+        QMessageBox::warning(this, tr("Jog error"), error);
+        return;
+    }
+    ui->jogSpeedEdit->setText(QString::number(next, 'f', 1));
+}
+
+void MainWindow::onJogMinusClicked()
+{
+    bool ok = false;
+    const double current = ui->jogSpeedEdit->text().trimmed().toDouble(&ok);
+    const double next = (ok ? current : 0.0) - 1.0;
+    QString error;
+    if (!sendJogVelocityCommand(next, &error)) {
+        QMessageBox::warning(this, tr("Jog error"), error);
+        return;
+    }
+    ui->jogSpeedEdit->setText(QString::number(next, 'f', 1));
+}
+
+void MainWindow::onJogStopClicked()
+{
+    QString error;
+    if (!sendJogVelocityCommand(0.0, &error)) {
+        QMessageBox::warning(this, tr("Jog error"), error);
+        return;
+    }
+    ui->jogSpeedEdit->setText(QStringLiteral("0.0"));
 }
 
 bool MainWindow::parseWaypointInput(std::vector<std::array<double, 4>> &waypoints, QString &error) const
@@ -475,40 +637,56 @@ void MainWindow::onStopTrajectoryClicked()
     ui->labelTrajectoryStatus->setText(tr("Status: trajectory stopped"));
 }
 
-bool MainWindow::parseInitialPose(std::array<double, 4> &jointRad, QString &error) const
+bool MainWindow::parseInitialPose(std::array<double, 4> &jointDeg, QString &error) const
 {
     const QLineEdit *edits[4] = {ui->initQ1Edit, ui->initQ2Edit, ui->initQ3Edit, ui->initQ4Edit};
     for (int i = 0; i < 4; ++i) {
         bool ok = false;
         const double v = edits[i]->text().trimmed().toDouble(&ok);
         if (!ok) {
-            error = tr("q%1 is invalid. Enter radian value.").arg(i + 1);
+            error = tr("q%1 is invalid. Enter degree value.").arg(i + 1);
             return false;
         }
-        jointRad[static_cast<size_t>(i)] = v;
+        jointDeg[static_cast<size_t>(i)] = v;
     }
     return true;
 }
 
 void MainWindow::onSendInitialPoseClicked()
 {
-    std::array<double, 4> qJointRad{};
+    std::array<double, 4> qJointDeg{};
     QString error;
-    if (!parseInitialPose(qJointRad, error)) {
+    if (!parseInitialPose(qJointDeg, error)) {
         QMessageBox::warning(this, tr("Initial pose error"), error);
         return;
     }
 
     std::vector<uint8_t> payload;
     payload.reserve(32);
-    for (double v : qJointRad) {
+    for (double vDeg : qJointDeg) {
+        const double vRad = vDeg * M_PI / 180.0;
         std::uint64_t u = 0;
-        std::memcpy(&u, &v, sizeof(double));
+        std::memcpy(&u, &vRad, sizeof(double));
         for (int b = 0; b < 8; ++b)
             payload.push_back(static_cast<uint8_t>((u >> (8 * b)) & 0xFFu));
     }
     m_net->requestSend(pmi::buildClientFrame(pmi::kCmdSetInitialJointPose, payload));
     ui->labelTrajectoryStatus->setText(tr("Status: initial pose sent"));
+}
+
+void MainWindow::onSendZeroPoseClicked()
+{
+    std::vector<uint8_t> payload;
+    payload.reserve(32);
+    for (int i = 0; i < 4; ++i) {
+        const double vRad = 0.0;
+        std::uint64_t u = 0;
+        std::memcpy(&u, &vRad, sizeof(double));
+        for (int b = 0; b < 8; ++b)
+            payload.push_back(static_cast<uint8_t>((u >> (8 * b)) & 0xFFu));
+    }
+    m_net->requestSend(pmi::buildClientFrame(pmi::kCmdSetInitialJointPose, payload));
+    ui->labelTrajectoryStatus->setText(tr("Status: zero pose sent"));
 }
 
 void MainWindow::onLogStartClicked()

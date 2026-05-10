@@ -27,13 +27,16 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # 다른 환경에서 EigenConfig.cmake 경로가 다르면 CMAKE_PREFIX_PATH 설정
 find_package(Eigen3 REQUIRED CONFIG)
 
+set(PMI_KINEMATICS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../pmi_kinematics")
+add_subdirectory(${PMI_KINEMATICS_DIR} ${CMAKE_CURRENT_BINARY_DIR}/pmi_kinematics)
+
 add_executable(pmi_cpp
     src/main.cpp
     src/controlmain.cpp
     src/path_generation.cpp
 )
 
-target_link_libraries(pmi_cpp PRIVATE Eigen3::Eigen)
+target_link_libraries(pmi_cpp PRIVATE Eigen3::Eigen pmi_kinematics)
 
 target_include_directories(pmi_cpp PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include

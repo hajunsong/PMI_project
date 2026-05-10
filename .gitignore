@@ -139,5 +139,9 @@ rl_pmi/checkpoints/
 rl_pmi/tensorboard_logs/
 rl_pmi/*.zip
 
-# PMI Server runtime logs
+# PMI Server runtime logs & calibration data (machine-specific, not version-controlled)
 PMI_Server/pmi_server_log_*.csv
+PMI_Server/pmi_zero_offsets.txt
+
+# analysis/cpp 플롯 이미지 (생성물)
+analysis/cpp/plots/

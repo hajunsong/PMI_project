@@ -9,6 +9,10 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Threads REQUIRED)
+find_package(Eigen3 REQUIRED CONFIG)
+
+set(PMI_KINEMATICS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../pmi_kinematics")
+add_subdirectory(${PMI_KINEMATICS_DIR} ${CMAKE_CURRENT_BINARY_DIR}/pmi_kinematics)
 
 set(PMI_PROTOCOL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../pmi_protocol")
 
@@ -29,7 +33,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
 target_link_directories(${PROJECT_NAME} PRIVATE /usr/local/lib)
 
-target_link_libraries(${PROJECT_NAME} PRIVATE Threads::Threads dxl_x64_cpp)
+target_link_libraries(${PROJECT_NAME} PRIVATE Threads::Threads dxl_x64_cpp pmi_kinematics)
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     PMI_SERVER_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}"

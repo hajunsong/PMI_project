@@ -1,0 +1,39 @@
+# PMI Server — VSD path-tracking config (current control mode + planner running).
+# Parsed once at the start of each TCP client session.
+# Format: KEY = VALUE  (lines starting with '#' are comments)
+# Keys are case-insensitive; whitespace is ignored.
+
+# Enable (1) / disable (0) VSD. When 0, current mode falls back to joint-space PI.
+enable = 1
+
+# Task-space stiffness Ks [N/m for x/y/z, Nm/rad for roll/pitch].
+# analysis/cpp ControlMain::run_vsd defaults are ~2e5 / ~1e4. Reduced for hardware safety.
+ks_x     = 5000
+ks_y     = 5000
+ks_z     = 5000
+ks_roll  =  500
+ks_pitch =  500
+
+# Task-space damping Kd [N·s/m for x/y/z, Nm·s/rad for roll/pitch].
+kd_x     = 100
+kd_y     = 100
+kd_z     = 100
+kd_roll  =   10
+kd_pitch =   10
+
+# Motor torque constant [Nm/A]. XM540-W270 ≈ 10.6 Nm / 4.4 A ≈ 2.41.
+# motor_current = (joint_torque * gear) / kt_nm_per_a
+kt_nm_per_a = 2.41
+
+# Per-motor goal current limit [A] applied after VSD output. Stay below the bus current limit.
+max_amp = 5.0
+
+# Per-joint torque safety clamp before motor conversion [Nm].
+max_joint_tau_nm = 25.0
+
+# Linear gain ramp-in window applied at trajectory start [s].
+# Ks/Kd are scaled by t/ramp_in_sec (clipped to [0,1]) for the first ramp_in_sec seconds after the
+# planner is started. Gravity comp is NOT ramped. This absorbs any residual joint mismatch between
+# the planner's first IK target and the actual encoder pose so the VSD doesn't kick to saturation
+# at t=0. Set to 0 to disable.
+ramp_in_sec = 0.5

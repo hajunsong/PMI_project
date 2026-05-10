@@ -9,6 +9,8 @@
 
 #include <Eigen/LU>
 
+#include <pmi_kinematics/pmi_kinematics.hpp>
+
 #include "controlmain.h"
 
 namespace {
@@ -572,7 +574,7 @@ void ControlMain::read_data()
     // body2
     body[1].qi = 0;
     body[1].qi_act = 0;
-    body[1].gear = 360.0 / 54.0;
+    body[1].gear = 54.0 / 360.0;
     body[1].dqi = 0;
     body[1].dqi_act = 0;
     body[1].ddqi = 0;
@@ -592,7 +594,7 @@ void ControlMain::read_data()
     // body3
     body[2].qi = 0;
     body[2].qi_act = 0;
-    body[2].gear = 360.0 / 108.0;
+    body[2].gear = 108.0 / 360.0;
     body[2].dqi = 0;
     body[2].dqi_act = 0;
     body[2].ddqi = 0;
@@ -612,7 +614,7 @@ void ControlMain::read_data()
     // body4
     body[3].qi = 0;
     body[3].qi_act = 0;
-    body[3].gear = 360.0 / 108.0;
+    body[3].gear = 108.0 / 360.0;
     body[3].dqi = 0;
     body[3].dqi_act = 0;
     body[3].ddqi = 0;
@@ -660,19 +662,29 @@ void ControlMain::position_calculation()
         b.Aijpp << c, -s, 0, s, c, 0, 0, 0, 1;
     }
 
-    const Body* prev = &base;
-    for (Body& b : body) {
-        b.Ai = prev->Ai * b.Cij * b.Aijpp;
-        b.sij = prev->Ai * b.sijp;
-        b.ri = prev->ri + b.sij;
-        b.Hi = prev->Ai * b.Cij * b.u_vec;
-        prev = &b;
+    Eigen::Vector4d q;
+    for (int i = 0; i < NB; ++i)
+        q(i) = body[i].qi;
+
+    Eigen::Matrix3d Ai[pmi::kNumJoints];
+    Eigen::Vector3d ri[pmi::kNumJoints];
+    Eigen::Vector3d Hi[pmi::kNumJoints];
+    Eigen::Vector3d sij[pmi::kNumJoints];
+    Eigen::Vector3d re;
+    Eigen::Matrix3d Ae;
+    pmi::forward_kinematics_chain(q, Ai, ri, Hi, sij, re, Ae);
+
+    for (int i = 0; i < NB; ++i) {
+        body[i].Ai = Ai[i];
+        body[i].ri = ri[i];
+        body[i].Hi = Hi[i];
+        body[i].sij = sij[i];
     }
 
     Body& ee = body[3];
     ee.se = ee.Ai * ee.sep;
-    ee.re = ee.ri + ee.se;
-    ee.Ae = ee.Ai * ee.Ce;
+    ee.re = re;
+    ee.Ae = Ae;
     ee.rpy = mat2rpy(ee.Ae);
 
     for (Body& b : body) {

@@ -1,12 +1,16 @@
 #include "path_planner.h"
 
+#include <pmi_kinematics/pmi_kinematics.hpp>
+
+#include <Eigen/Core>
+#include <Eigen/LU>
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <iostream>
 
 namespace {
 constexpr double kPi = 3.14159265358979323846;
-constexpr std::array<std::array<double, 3>, 4> kSijP = {{{{0.0, 0.0, -0.22}}, {{0.0, -0.23, 0.0}}, {{0.23, 0.0, 0.0}}, {{0.18, 0.0, 0.0}}}};
 constexpr std::array<double, 3> kRollPitchTarget = {-kPi / 2.0, 0.0, 0.0};
 } // namespace
 
@@ -56,6 +60,8 @@ bool PathPlanner::plan(double dt)
     path_.clear();
     pathIndex_ = 0;
     running_ = false;
+    lastPlanClipped_ = false;
+    lastPlanFirstClippedIdx_ = 0;
     if (waypoints_.size() < 2 || dt <= 0.0)
         return false;
     for (std::size_t i = 1; i < waypoints_.size(); ++i) {
@@ -73,10 +79,78 @@ bool PathPlanner::plan(double dt)
         for (std::size_t k = 0; k < n; ++k) {
             if (i < waypoints_.size() - 1 && k == n - 1)
                 continue;
-            path_.push_back({px[k][0], py[k][0], pz[k][0]});
+            // quinticPath returns {pos, vel, acc} per sample → keep pos + vel for VSD task-space PD.
+            path_.push_back({px[k][0], py[k][0], pz[k][0], px[k][1], py[k][1], pz[k][1]});
         }
     }
-    return !path_.empty();
+    if (path_.empty())
+        return false;
+
+    // Pre-IK every sample under joint limits and replace its EE position with what is actually reachable.
+    // Orientation (roll = -π/2, pitch = 0) is tracked along with position inside the same DLS — when joints
+    // saturate, the active-set clamp in ikSolveTo() keeps orientation as best-effort while the position
+    // gets deflected to the closest reachable point. The achieved FK position becomes the new path sample,
+    // converged or not.
+    const std::array<double, 4> qStart = q_;
+    bool anyClipped = false;
+    std::size_t firstClippedIdx = 0;
+    std::size_t unconvergedCount = 0;
+    for (std::size_t k = 0; k < path_.size(); ++k) {
+        Sample &s = path_[k];
+        const double desiredX = s.x, desiredY = s.y, desiredZ = s.z;
+        const bool converged = ikSolveTo(s);
+        if (!converged)
+            ++unconvergedCount;
+        fk();
+        const double dxPos = ee_pos_[0] - desiredX;
+        const double dyPos = ee_pos_[1] - desiredY;
+        const double dzPos = ee_pos_[2] - desiredZ;
+        s.x = ee_pos_[0];
+        s.y = ee_pos_[1];
+        s.z = ee_pos_[2];
+        const double clipDist = std::sqrt(dxPos * dxPos + dyPos * dyPos + dzPos * dzPos);
+        constexpr double kClipReportThreshold = 1e-3; // 1 mm — log when a sample was deflected
+        if (clipDist > kClipReportThreshold) {
+            if (!anyClipped) {
+                anyClipped = true;
+                firstClippedIdx = k;
+            }
+        }
+    }
+    // Re-derive workspace velocities from the (possibly modified) positions via central differences.
+    const double dtSec = (path_.size() > 1) ? dt : 0.0;
+    if (dtSec > 0.0) {
+        for (std::size_t k = 0; k < path_.size(); ++k) {
+            const std::size_t kp = (k + 1 < path_.size()) ? k + 1 : k;
+            const std::size_t km = (k > 0) ? k - 1 : k;
+            const double denom = (kp == k || km == k) ? dtSec : (2.0 * dtSec);
+            path_[k].vx = (path_[kp].x - path_[km].x) / denom;
+            path_[k].vy = (path_[kp].y - path_[km].y) / denom;
+            path_[k].vz = (path_[kp].z - path_[km].z) / denom;
+        }
+    }
+    // Restore q_ so step() begins from the actual starting joint state.
+    q_ = qStart;
+    fk();
+
+    lastPlanClipped_ = anyClipped;
+    lastPlanFirstClippedIdx_ = firstClippedIdx;
+    if (anyClipped) {
+        std::cerr << "[PMI] path clipped to joint limits — first deflected sample at index " << firstClippedIdx
+                  << "/" << path_.size()
+                  << " (orientation kept at target; EE position pulled inside reachable workspace)\n";
+    }
+    if (unconvergedCount > 0) {
+        std::cerr << "[PMI] note: " << unconvergedCount << "/" << path_.size()
+                  << " samples did not fully converge in IK — using best-effort q (path may jitter near limits)\n";
+    }
+    return true;
+}
+
+void PathPlanner::setJointLimits(const std::array<double, 4> &qMinRad, const std::array<double, 4> &qMaxRad)
+{
+    qMin_ = qMinRad;
+    qMax_ = qMaxRad;
 }
 
 void PathPlanner::start()
@@ -90,16 +164,6 @@ void PathPlanner::start()
 void PathPlanner::stop()
 {
     running_ = false;
-}
-
-std::array<double, 3> PathPlanner::cross(const std::array<double, 3> &a, const std::array<double, 3> &b)
-{
-    return {a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]};
-}
-
-std::array<double, 3> PathPlanner::sub3(const std::array<double, 3> &a, const std::array<double, 3> &b)
-{
-    return {a[0] - b[0], a[1] - b[1], a[2] - b[2]};
 }
 
 double PathPlanner::norm5(const std::array<double, 5> &v)
@@ -118,126 +182,133 @@ double PathPlanner::wrapToPi(double angle)
     return wrapped - kPi;
 }
 
-bool PathPlanner::solveLinear5x5(double a[5][5], double b[5], double x[5])
+void PathPlanner::currentEeFromInternalFk(double outXyz[3])
 {
-    for (int i = 0; i < 5; ++i) {
-        int pivot = i;
-        double maxAbs = std::fabs(a[i][i]);
-        for (int r = i + 1; r < 5; ++r) {
-            const double v = std::fabs(a[r][i]);
-            if (v > maxAbs) {
-                maxAbs = v;
-                pivot = r;
-            }
-        }
-        if (maxAbs < 1e-12)
-            return false;
-        if (pivot != i) {
-            for (int c = i; c < 5; ++c)
-                std::swap(a[i][c], a[pivot][c]);
-            std::swap(b[i], b[pivot]);
-        }
-        const double diag = a[i][i];
-        for (int c = i; c < 5; ++c)
-            a[i][c] /= diag;
-        b[i] /= diag;
-        for (int r = 0; r < 5; ++r) {
-            if (r == i)
-                continue;
-            const double f = a[r][i];
-            for (int c = i; c < 5; ++c)
-                a[r][c] -= f * a[i][c];
-            b[r] -= f * b[i];
-        }
-    }
-    for (int i = 0; i < 5; ++i)
-        x[i] = b[i];
-    return true;
+    fk();
+    outXyz[0] = ee_pos_[0];
+    outXyz[1] = ee_pos_[1];
+    outXyz[2] = ee_pos_[2];
 }
 
 void PathPlanner::fk()
 {
-    for (int i = 0; i < 4; ++i)
-        body_[i].qi = q_[static_cast<std::size_t>(i)];
-
-    body_[0].ri = kSijP[0];
-    body_[0].hi = {0.0, 0.0, 1.0};
-    body_[1].ri = {body_[0].ri[0], body_[0].ri[1] + kSijP[1][1], body_[0].ri[2]};
-    body_[1].hi = {0.0, 1.0, 0.0};
-    body_[2].ri = {body_[1].ri[0] + kSijP[2][0], body_[1].ri[1], body_[1].ri[2]};
-    body_[2].hi = {1.0, 0.0, 0.0};
-    body_[3].ri = {body_[2].ri[0] + kSijP[3][0], body_[2].ri[1], body_[2].ri[2]};
-    body_[3].hi = {1.0, 0.0, 0.0};
-}
-
-void PathPlanner::jacobian(double j[5][4]) const
-{
-    const std::array<double, 3> ee = body_[3].ri;
-    for (int i = 0; i < 4; ++i) {
-        const auto c = cross(body_[i].hi, sub3(ee, body_[i].ri));
-        j[0][i] = c[0];
-        j[1][i] = c[1];
-        j[2][i] = c[2];
-        j[3][i] = 0.0;
-        j[4][i] = 0.0;
-    }
-    j[3][0] = 1.0;
-    j[4][1] = 1.0;
+    const Eigen::Vector4d q(q_[0], q_[1], q_[2], q_[3]);
+    Eigen::Vector3d re;
+    Eigen::Vector3d rpy;
+    pmi::fk_ee_pose_joint_rad(q, re, rpy);
+    ee_pos_[0] = re[0];
+    ee_pos_[1] = re[1];
+    ee_pos_[2] = re[2];
+    ee_roll_ = rpy[0];
+    ee_pitch_ = rpy[1];
 }
 
 std::array<double, 5> PathPlanner::currentErrorTo(const Sample &s) const
 {
-    return {s.x - body_[3].ri[0], s.y - body_[3].ri[1], s.z - body_[3].ri[2], wrapToPi(kRollPitchTarget[0] - q_[0]), wrapToPi(kRollPitchTarget[1] - q_[1])};
+    return {s.x - ee_pos_[0], s.y - ee_pos_[1], s.z - ee_pos_[2], wrapToPi(kRollPitchTarget[0] - ee_roll_), wrapToPi(kRollPitchTarget[1] - ee_pitch_)};
 }
 
 bool PathPlanner::ikSolveTo(const Sample &s)
 {
-    constexpr int kMaxIter = 100;
+    // Same IK step as `ControlMain::run_ik` plus active-set joint-limit clamping:
+    //   δq = α Jᵣᵀ (Jᵣ Jᵣᵀ + λ²I)⁻¹ e   (Jᵣ keeps only columns of joints not yet at a bound)
+    // When a joint hits qMin_/qMax_, it is fixed at the bound and dropped from the active set so the
+    // remaining joints continue to reduce the 5-D task error (orientation + position) as best they can.
+    constexpr int kMaxIter = 200;
     constexpr double kErrTol = 1e-3;
-    constexpr double kDamping = 1e-4;
+    constexpr double kDamping = 1e-7;
     constexpr double kAlpha = 0.6;
+    constexpr double kBoundEps = 1e-9;
+
+    std::array<bool, 4> clamped{{false, false, false, false}};
+    // If the seed q_ is already outside limits, snap it inside so iterations start from a feasible point.
+    for (int k = 0; k < 4; ++k) {
+        if (q_[static_cast<size_t>(k)] < qMin_[static_cast<size_t>(k)])
+            q_[static_cast<size_t>(k)] = qMin_[static_cast<size_t>(k)];
+        if (q_[static_cast<size_t>(k)] > qMax_[static_cast<size_t>(k)])
+            q_[static_cast<size_t>(k)] = qMax_[static_cast<size_t>(k)];
+    }
+
     for (int iter = 0; iter < kMaxIter; ++iter) {
         fk();
         const auto err = currentErrorTo(s);
         if (norm5(err) < kErrTol)
             return true;
 
-        double j[5][4]{};
-        jacobian(j);
-        double a[5][5]{};
-        double b[5]{};
-        for (int r = 0; r < 5; ++r) {
-            b[r] = err[static_cast<std::size_t>(r)];
-            for (int c = 0; c < 5; ++c) {
-                double v = 0.0;
-                for (int k = 0; k < 4; ++k)
-                    v += j[r][k] * j[c][k];
-                a[r][c] = v + (r == c ? (kDamping * kDamping) : 0.0);
+        const Eigen::Vector4d q(q_[0], q_[1], q_[2], q_[3]);
+        Eigen::Matrix<double, 5, 4> J;
+        pmi::jacobian_5x4_joint_rad(q, J);
+
+        // Zero-out columns of clamped joints so they cannot move.
+        for (int k = 0; k < 4; ++k) {
+            if (clamped[static_cast<size_t>(k)])
+                J.col(k).setZero();
+        }
+
+        Eigen::Matrix<double, 5, 1> err_vec;
+        err_vec << err[0], err[1], err[2], err[3], err[4];
+
+        Eigen::Matrix<double, 5, 5> JJT_reg = J * J.transpose();
+        JJT_reg.diagonal().array() += kDamping * kDamping;
+
+        Eigen::Matrix<double, 5, 1> y = JJT_reg.partialPivLu().solve(err_vec);
+        Eigen::Vector4d dq = kAlpha * J.transpose() * y;
+        for (int k = 0; k < 4; ++k) {
+            if (clamped[static_cast<size_t>(k)])
+                dq(k) = 0.0;
+        }
+
+        bool newClampThisIter = false;
+        for (int k = 0; k < 4; ++k) {
+            if (clamped[static_cast<size_t>(k)])
+                continue;
+            const double qk = q_[static_cast<size_t>(k)] + dq(k);
+            const double qmin = qMin_[static_cast<size_t>(k)];
+            const double qmax = qMax_[static_cast<size_t>(k)];
+            if (qk > qmax + kBoundEps) {
+                q_[static_cast<size_t>(k)] = qmax;
+                clamped[static_cast<size_t>(k)] = true;
+                newClampThisIter = true;
+            } else if (qk < qmin - kBoundEps) {
+                q_[static_cast<size_t>(k)] = qmin;
+                clamped[static_cast<size_t>(k)] = true;
+                newClampThisIter = true;
+            } else {
+                q_[static_cast<size_t>(k)] = qk;
             }
         }
-        double y[5]{};
-        if (!solveLinear5x5(a, b, y))
-            return false;
-        for (int k = 0; k < 4; ++k) {
-            double dq = 0.0;
-            for (int r = 0; r < 5; ++r)
-                dq += j[r][k] * y[r];
-            q_[static_cast<std::size_t>(k)] += kAlpha * dq;
-        }
+
+        // If a new clamp activated, restart the iteration with the reduced active set so dq is recomputed
+        // for the remaining axes (without this, a single big dq could drag a free axis through saturation).
+        if (newClampThisIter)
+            continue;
     }
-    return false;
+    fk();
+    const auto finalErr = currentErrorTo(s);
+    return norm5(finalErr) < kErrTol;
 }
 
 bool PathPlanner::step(std::array<double, 4> &jointRadOut)
 {
     if (!running_ || pathIndex_ >= path_.size())
         return false;
+    // After plan() rewrites samples to reachable EE positions, this IK should converge cleanly. Joint
+    // limits are still enforced as a safety net (e.g. if the live joint state drifted into the boundary).
     const bool solved = ikSolveTo(path_[pathIndex_]);
     ++pathIndex_;
     if (pathIndex_ >= path_.size())
         running_ = false;
-    if (!solved)
-        return false;
+    if (!solved) {
+        const std::size_t failedAt = pathIndex_ - 1;
+        const Sample &s = path_[failedAt];
+        fk();
+        std::cerr << "[PMI] trajectory IK did not fully converge at sample " << failedAt << "/" << path_.size()
+                  << " target_xyz=(" << s.x << ", " << s.y << ", " << s.z << ") current_ee_xyz=(" << ee_pos_[0]
+                  << ", " << ee_pos_[1] << ", " << ee_pos_[2] << ") — using best-effort q\n";
+        // Use the best-effort q_ instead of failing hard; samples are already inside reachable workspace.
+        jointRadOut = q_;
+        return true;
+    }
     jointRadOut = q_;
     return true;
 }
@@ -253,5 +324,24 @@ bool PathPlanner::currentDesiredPose(DesiredPose &out) const
     out.roll = -kPi / 2.0;
     out.pitch = 0.0;
     out.yaw = 0.0;
+    return true;
+}
+
+bool PathPlanner::currentDesiredPoseAndVelocity(double outPos[3], double &outRoll, double &outPitch,
+                                                double outVel[5]) const
+{
+    if (!running_ || pathIndex_ >= path_.size())
+        return false;
+    const Sample &s = path_[pathIndex_];
+    outPos[0] = s.x;
+    outPos[1] = s.y;
+    outPos[2] = s.z;
+    outRoll = -kPi / 2.0;
+    outPitch = 0.0;
+    outVel[0] = s.vx;
+    outVel[1] = s.vy;
+    outVel[2] = s.vz;
+    outVel[3] = 0.0; // constant orientation target → zero angular rate desired
+    outVel[4] = 0.0;
     return true;
 }

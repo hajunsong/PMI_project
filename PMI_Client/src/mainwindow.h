@@ -40,14 +40,20 @@ private slots:
     void onServoOnClicked();
     void onStopClicked();
     void onZeroClicked();
+    void onResetClicked();
     void onModeCurrentClicked();
     void onModeVelocityClicked();
     void onModeExtendedPosClicked();
+    void onModeCurrentBasedPosClicked();
+    void onJogPlusClicked();
+    void onJogMinusClicked();
+    void onJogStopClicked();
     void onSendWaypointsClicked();
     void onPlanPathClicked();
     void onStartTrajectoryClicked();
     void onStopTrajectoryClicked();
     void onSendInitialPoseClicked();
+    void onSendZeroPoseClicked();
     void onLogStartClicked();
     void onLogStopClicked();
 
@@ -64,7 +70,8 @@ private:
     void stopLogCountdown();
     bool parseWaypointInput(std::vector<std::array<double, 4>> &waypoints, QString &error) const;
     std::vector<uint8_t> buildWaypointPayload(const std::vector<std::array<double, 4>> &waypoints) const;
-    bool parseInitialPose(std::array<double, 4> &jointRad, QString &error) const;
+    bool parseInitialPose(std::array<double, 4> &jointDeg, QString &error) const;
+    bool sendJogVelocityCommand(double signedJointVelDegPerSec, QString *errorOut = nullptr);
 
     std::unique_ptr<Ui::MainWindow> ui;
     std::unique_ptr<TcpClient> m_net;

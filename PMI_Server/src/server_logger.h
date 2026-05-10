@@ -28,7 +28,9 @@ public:
     ServerLogger();
     ~ServerLogger();
 
-    void updateLatest(const pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount], bool hasLatest, const PathDesiredPose &pathDesired);
+    /// When `targetJointDegValid` is true, `targetJointDeg` is the PI reference joint angle [deg] (same as `ExternalEncoderVelocityControl::targetJointDeg`).
+    void updateLatest(const pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount], bool hasLatest, const PathDesiredPose &pathDesired,
+        bool targetJointDegValid, const std::array<double, pmi::kTelemetryAxisCount> &targetJointDeg);
     bool start(double durationSec);
     void stop();
     bool isLogging() const { return m_logging.load(); }
@@ -39,6 +41,8 @@ private:
         std::uint64_t t_us = 0;
         std::array<pmi::ServoTelemetry, pmi::kTelemetryAxisCount> axes{};
         PathDesiredPose pathDesired{};
+        bool targetJointDegValid = false;
+        std::array<double, pmi::kTelemetryAxisCount> targetJointDeg{};
     };
 
     void samplerLoop(double durationSec);
@@ -56,6 +60,8 @@ private:
     std::array<pmi::ServoTelemetry, pmi::kTelemetryAxisCount> m_latestAxes{};
     PathDesiredPose m_latestPathDesired{};
     bool m_hasLatest = false;
+    bool m_latestTargetJointDegValid = false;
+    std::array<double, pmi::kTelemetryAxisCount> m_latestTargetJointDeg{};
 
     std::mutex m_queueMutex;
     std::condition_variable m_queueCv;

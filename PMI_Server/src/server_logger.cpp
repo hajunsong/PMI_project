@@ -1,18 +1,17 @@
 #include "server_logger.h"
 
+#include <pmi_kinematics/pmi_kinematics.hpp>
+
+#include <Eigen/Core>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <sstream>
 
 namespace {
-constexpr double kPi = 3.14159265358979323846;
-constexpr double kGear[4] = {32.0 / 60.0, 360.0 / 54.0, 360.0 / 108.0, 360.0 / 108.0};
-
-using Vec3 = std::array<double, 3>;
-using Mat3 = std::array<std::array<double, 3>, 3>;
 
 struct EePose {
     double x = 0.0;
@@ -23,109 +22,38 @@ struct EePose {
     double yaw = 0.0;
 };
 
-Mat3 matIdentity()
+/// Compute EE pose using the same joint source as the VSD/PI controllers in `tcp_server.cpp`:
+///   - axis 0   : motor `present_position` × gear ratio (no external encoder available)
+///   - axis 1-3 : external AMT21 encoder when finite, otherwise fall back to motor × gear.
+/// Mixing motor*gear with encoder readings here used to make `ee_cur` look like it was at the
+/// origin (off by ~38° on axis 2 due to gear/zero-offset calibration drift), which made VSD logs
+/// completely unusable for tuning.
+EePose eePoseFromTelemetry(const std::array<pmi::ServoTelemetry, pmi::kTelemetryAxisCount> &axes, bool useGoal)
 {
-    return {{{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}}};
-}
+    double motor_deg[4]{};
+    for (int i = 0; i < 4; ++i)
+        motor_deg[i] = useGoal ? axes[static_cast<size_t>(i)].goal_position
+                                : axes[static_cast<size_t>(i)].present_position;
+    double q_rad[4]{};
+    pmi::joint_rad_from_motor_deg(motor_deg, q_rad);
 
-Mat3 matMul(const Mat3 &a, const Mat3 &b)
-{
-    Mat3 c{};
-    for (int r = 0; r < 3; ++r) {
-        for (int col = 0; col < 3; ++col) {
-            c[r][col] = 0.0;
-            for (int k = 0; k < 3; ++k)
-                c[r][col] += a[r][k] * b[k][col];
+    if (!useGoal) {
+        for (int i = 1; i < 4; ++i) {
+            const double enc_deg = axes[static_cast<size_t>(i)].encoder_position;
+            if (std::isfinite(enc_deg))
+                q_rad[i] = enc_deg * (M_PI / 180.0);
         }
     }
-    return c;
-}
 
-Vec3 matVecMul(const Mat3 &a, const Vec3 &v)
-{
-    Vec3 out{};
-    for (int r = 0; r < 3; ++r)
-        out[r] = a[r][0] * v[0] + a[r][1] * v[1] + a[r][2] * v[2];
-    return out;
-}
-
-Vec3 vecAdd(const Vec3 &a, const Vec3 &b)
-{
-    return {a[0] + b[0], a[1] + b[1], a[2] + b[2]};
-}
-
-Mat3 rotZ(double q)
-{
-    const double c = std::cos(q);
-    const double s = std::sin(q);
-    return {{{c, -s, 0.0}, {s, c, 0.0}, {0.0, 0.0, 1.0}}};
-}
-
-Mat3 eulerZXZ(double phi, double theta, double psi)
-{
-    const double cphi = std::cos(phi);
-    const double sphi = std::sin(phi);
-    const double cth = std::cos(theta);
-    const double sth = std::sin(theta);
-    const double cpsi = std::cos(psi);
-    const double spsi = std::sin(psi);
-
-    const Mat3 rotPhi = {{{cphi, -sphi, 0.0}, {sphi, cphi, 0.0}, {0.0, 0.0, 1.0}}};
-    const Mat3 rotTheta = {{{1.0, 0.0, 0.0}, {0.0, cth, -sth}, {0.0, sth, cth}}};
-    const Mat3 rotPsi = {{{cpsi, -spsi, 0.0}, {spsi, cpsi, 0.0}, {0.0, 0.0, 1.0}}};
-    return matMul(matMul(rotPhi, rotTheta), rotPsi);
-}
-
-Vec3 mat2rpy(const Mat3 &a)
-{
-    const double roll = std::atan2(a[2][1], a[2][2]);
-    const double pitch = std::atan2(-a[2][0], std::sqrt(a[0][0] * a[0][0] + a[1][0] * a[1][0]));
-    const double yaw = std::atan2(a[1][0], a[0][0]);
-    return {roll, pitch, yaw};
-}
-
-EePose eePoseFromMotorDeg(const std::array<pmi::ServoTelemetry, pmi::kTelemetryAxisCount> &axes, bool useGoal)
-{
-    std::array<double, 4> q{};
-    for (int i = 0; i < 4; ++i) {
-        const double motorDeg = useGoal ? axes[static_cast<size_t>(i)].goal_position : axes[static_cast<size_t>(i)].present_position;
-        const double jointDeg = motorDeg * kGear[i];
-        q[static_cast<size_t>(i)] = jointDeg * kPi / 180.0;
-    }
-
-    // Same kinematic constants as analysis/cpp ControlMain::read_data().
-    const Vec3 sijp[4] = {{0.0, 0.0, -0.22}, {0.0, -0.23, 0.0}, {0.23, 0.0, 0.0}, {0.23, 0.0, 0.0}};
-    const Mat3 Cij[4] = {
-        eulerZXZ(0.0, kPi, 0.0),
-        eulerZXZ(0.0, kPi / 2.0, 0.0),
-        eulerZXZ(-kPi / 2.0, 0.0, 0.0),
-        eulerZXZ(0.0, kPi, 0.0),
-    };
-    const Vec3 sep = {0.18, 0.0, 0.0};
-    const Mat3 Ce = eulerZXZ(-kPi / 2.0, 0.0, 0.0);
-
-    Mat3 prevAi = matIdentity();
-    Vec3 prevRi = {0.0, 0.0, 0.0};
-    Mat3 ai[4]{};
-    Vec3 ri[4]{};
-    for (int i = 0; i < 4; ++i) {
-        const Mat3 aijpp = rotZ(q[static_cast<size_t>(i)]);
-        ai[i] = matMul(matMul(prevAi, Cij[i]), aijpp);
-        const Vec3 sij = matVecMul(prevAi, sijp[i]);
-        ri[i] = vecAdd(prevRi, sij);
-        prevAi = ai[i];
-        prevRi = ri[i];
-    }
-
-    const Vec3 se = matVecMul(ai[3], sep);
-    const Vec3 re = vecAdd(ri[3], se);
-    const Mat3 ae = matMul(ai[3], Ce);
-    const Vec3 rpy = mat2rpy(ae);
+    const Eigen::Vector4d q(q_rad[0], q_rad[1], q_rad[2], q_rad[3]);
+    Eigen::Vector3d pos;
+    Eigen::Vector3d rpy;
+    pmi::fk_ee_pose_joint_rad(q, pos, rpy);
 
     EePose pose;
-    pose.x = re[0];
-    pose.y = re[1];
-    pose.z = re[2];
+    pose.x = pos[0];
+    pose.y = pos[1];
+    pose.z = pos[2];
     pose.roll = rpy[0];
     pose.pitch = rpy[1];
     pose.yaw = rpy[2];
@@ -169,11 +97,14 @@ ServerLogger::~ServerLogger()
 }
 
 void ServerLogger::updateLatest(
-    const pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount], bool hasLatest, const PathDesiredPose &pathDesired)
+    const pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount], bool hasLatest, const PathDesiredPose &pathDesired,
+    bool targetJointDegValid, const std::array<double, pmi::kTelemetryAxisCount> &targetJointDeg)
 {
     std::lock_guard<std::mutex> lock(m_latestMutex);
     m_hasLatest = hasLatest;
     m_latestPathDesired = pathDesired;
+    m_latestTargetJointDegValid = targetJointDegValid;
+    m_latestTargetJointDeg = targetJointDeg;
     if (!hasLatest)
         return;
     for (size_t i = 0; i < pmi::kTelemetryAxisCount; ++i)
@@ -230,6 +161,8 @@ void ServerLogger::samplerLoop(double durationSec)
                     std::chrono::duration_cast<std::chrono::microseconds>(now - start).count());
                 sample.axes = m_latestAxes;
                 sample.pathDesired = m_latestPathDesired;
+                sample.targetJointDegValid = m_latestTargetJointDegValid;
+                sample.targetJointDeg = m_latestTargetJointDeg;
             }
         }
         if (have) {
@@ -265,8 +198,8 @@ void ServerLogger::writerLoop()
         if (!m_file.is_open())
             continue;
         for (const auto &s : batch) {
-            const EePose eeCur = eePoseFromMotorDeg(s.axes, false);
-            const EePose eeDes = eePoseFromMotorDeg(s.axes, true);
+            const EePose eeCur = eePoseFromTelemetry(s.axes, false);
+            const EePose eeDes = eePoseFromTelemetry(s.axes, true);
             m_file << s.t_us;
             m_file << "," << eeCur.x << "," << eeCur.y << "," << eeCur.z
                    << "," << eeCur.roll << "," << eeCur.pitch << "," << eeCur.yaw;
@@ -279,6 +212,14 @@ void ServerLogger::writerLoop()
                        << "," << s.pathDesired.roll << "," << s.pathDesired.pitch << "," << s.pathDesired.yaw;
             } else {
                 m_file << ",nan,nan,nan,nan,nan,nan";
+            }
+            constexpr double kNan = std::numeric_limits<double>::quiet_NaN();
+            if (s.targetJointDegValid) {
+                for (size_t i = 0; i < pmi::kTelemetryAxisCount; ++i)
+                    m_file << "," << s.targetJointDeg[i];
+            } else {
+                for (size_t i = 0; i < pmi::kTelemetryAxisCount; ++i)
+                    m_file << "," << kNan;
             }
             for (size_t i = 0; i < pmi::kTelemetryAxisCount; ++i) {
                 const auto &a = s.axes[i];
@@ -312,6 +253,7 @@ void ServerLogger::openFile()
     m_file << ",ee_des_x,ee_des_y,ee_des_z,ee_des_roll,ee_des_pitch,ee_des_yaw";
     m_file << ",ee_des_goal_x,ee_des_goal_y,ee_des_goal_z,ee_des_goal_roll,ee_des_goal_pitch,ee_des_goal_yaw";
     m_file << ",ee_des_path_x,ee_des_path_y,ee_des_path_z,ee_des_path_roll,ee_des_path_pitch,ee_des_path_yaw";
+    m_file << ",target_joint_deg_0,target_joint_deg_1,target_joint_deg_2,target_joint_deg_3";
     for (size_t i = 0; i < pmi::kTelemetryAxisCount; ++i) {
         m_file << ",ax" << i << "_id_op"
                << ",ax" << i << "_servo_state"

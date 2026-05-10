@@ -31,7 +31,7 @@ function [base, body] = read_data()
 
     body(2).qi = 0;
     body(2).qi_act = 0;
-    body(2).gear = 360/54;
+    body(2).gear = 54/360;
     body(2).dqi = 0;
     body(2).dqi_act = 0;
     body(2).ddqi = 0;
@@ -50,7 +50,7 @@ function [base, body] = read_data()
 
     body(3).qi = 0;
     body(3).qi_act = 0;
-    body(3).gear = 360/108;
+    body(3).gear = 108/360;
     body(3).dqi = 0;
     body(3).dqi_act = 0;
     body(3).ddqi = 0;
@@ -69,7 +69,7 @@ function [base, body] = read_data()
 
     body(4).qi = 0;
     body(4).qi_act = 0;
-    body(4).gear = 360/108;
+    body(4).gear = 108/360;
     body(4).dqi = 0;
     body(4).dqi_act = 0;
     body(4).ddqi = 0;

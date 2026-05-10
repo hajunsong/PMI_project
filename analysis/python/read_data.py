@@ -37,7 +37,7 @@ def read_data(ctrl) -> None:
     # body2 parameters
     ctrl.body[1].qi = 0
     ctrl.body[1].qi_act = 0
-    ctrl.body[1].gear = 360/54
+    ctrl.body[1].gear = 54/360
     ctrl.body[1].dqi = 0
     ctrl.body[1].dqi_act = 0
     ctrl.body[1].ddqi = 0
@@ -57,7 +57,7 @@ def read_data(ctrl) -> None:
     # body3 parameters
     ctrl.body[2].qi = 0
     ctrl.body[2].qi_act = 0
-    ctrl.body[2].gear = 360/108
+    ctrl.body[2].gear = 108/360
     ctrl.body[2].dqi = 0
     ctrl.body[2].dqi_act = 0
     ctrl.body[2].ddqi = 0
@@ -77,7 +77,7 @@ def read_data(ctrl) -> None:
     # body4 parameters
     ctrl.body[3].qi = 0
     ctrl.body[3].qi_act = 0
-    ctrl.body[3].gear = 360/108
+    ctrl.body[3].gear = 108/360
     ctrl.body[3].dqi = 0
     ctrl.body[3].dqi_act = 0
     ctrl.body[3].ddqi = 0

@@ -37,11 +37,13 @@ All frames start with `SOF1 SOF2` and end with `EOF`.
 - `0x20`: Mode Current
 - `0x21`: Mode Velocity
 - `0x22`: Mode Extended Position
+- `0x23`: Mode Current-based Position
 - `0x30`: SetWaypointBatch
 - `0x31`: PlanPath
 - `0x32`: StartTrajectoryIK
 - `0x33`: StopTrajectoryIK
 - `0x34`: SetInitialJointPose
+- `0x35`: JogVelocity
 - `0x40`: LogStart
 - `0x41`: LogStop
 
@@ -59,7 +61,16 @@ All frames start with `SOF1 SOF2` and end with `EOF`.
 - `q1..q4`: each `float64` little-endian
 - Unit: joint radian (output-link side, before gear ratio conversion)
 
-### 2.6 Logging payload
+### 2.6 Jog velocity payload (`0x35`)
+
+- Layout: `[axis][joint_vel_deg_per_sec]`
+- `axis`: `uint8` (`0..3`)
+- `joint_vel_deg_per_sec`: `float64` little-endian (signed)
+  - `> 0`: jog `+` direction
+  - `< 0`: jog `-` direction
+  - `= 0`: stop jog
+
+### 2.7 Logging payload
 
 - `0x40` (`LogStart`) payload:
   - Layout: `[duration_sec]`
