@@ -13,9 +13,10 @@
 
 int main(int argc, char *argv[])
 {
-    uint16_t port = 9000;
-    const char *serialDev = "/dev/ttyCM904";
-    int baud = 1000000;
+    uint16_t telemetryPort = 9000;
+    uint16_t commandPort = 9001;
+    const char *serialDev = "/dev/ttyUSB1";
+    int baud = 2000000;
     bool noDevice = false;
     int positionalIdx = 0;
 
@@ -27,11 +28,12 @@ int main(int argc, char *argv[])
         }
 
         // Backward-compatible positional args:
-        // [tcp_port] [serial_device] [baud]
+        // [telemetry_port] [serial_device] [baud]
         if (positionalIdx == 0) {
             const long p = std::strtol(arg.c_str(), nullptr, 10);
             if (p > 0 && p <= 65535) {
-                port = static_cast<uint16_t>(p);
+                telemetryPort = static_cast<uint16_t>(p);
+                commandPort = static_cast<uint16_t>(p + 1);
                 positionalIdx++;
                 continue;
             }
@@ -51,7 +53,7 @@ int main(int argc, char *argv[])
         }
 
         std::cerr << "Unknown or invalid argument: " << arg << "\n";
-        std::cerr << "Usage: PMI_Server [tcp_port] [serial_device] [baud] [--no-device]\n";
+        std::cerr << "Usage: PMI_Server [telemetry_port] [serial_device] [baud] [--no-device]\n";
         return 1;
     }
 
@@ -64,22 +66,24 @@ int main(int argc, char *argv[])
                 std::cerr << " (" << std::strerror(errno) << ")\n";
             else
                 std::cerr << " (port init or DYNAMIXEL setup failed; errno unchanged)\n";
-            std::cerr << "Usage: PMI_Server [tcp_port] [serial_device] [baud] [--no-device]\n";
+            std::cerr << "Usage: PMI_Server [telemetry_port] [serial_device] [baud] [--no-device]\n";
             return 1;
         }
     }
 
     TcpServer server;
     server.setDxlBus(dxl);
-    if (!server.start(port)) {
-        std::cerr << "Failed to bind/listen on port " << port << "\n";
+    if (!server.start(telemetryPort, commandPort)) {
+        std::cerr << "Failed to bind/listen on ports " << telemetryPort << " (telemetry), " << commandPort << " (command)\n";
         return 1;
     }
 
     if (noDevice) {
-        std::cout << "PMI_Server TCP port " << port << ", no-device mode (dummy telemetry, Ctrl+C to stop)\n";
+        std::cout << "PMI_Server telemetry:" << telemetryPort << " command:" << commandPort
+                  << ", no-device mode (dummy telemetry, Ctrl+C to stop)\n";
     } else {
-        std::cout << "PMI_Server TCP port " << port << ", DYNAMIXEL " << serialDev << " @ " << baud
+        std::cout << "PMI_Server telemetry:" << telemetryPort << " command:" << commandPort
+                  << ", DYNAMIXEL " << serialDev << " @ " << baud
                   << " (IDs 1–4, Ctrl+C to stop)\n";
     }
     std::cout.flush();

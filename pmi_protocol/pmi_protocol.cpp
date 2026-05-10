@@ -29,16 +29,15 @@ bool appendTelemetryBlock(uint8_t *dst, size_t dstCap, size_t &off, const ServoT
     if (off + kTelemetryBlockBytes > dstCap)
         return false;
     uint8_t *p = dst + off;
-    p[0] = t.id_op_mode;
-    p[1] = t.servo_state;
-    writeF64LE(p + 2, t.present_position);
-    writeF64LE(p + 10, t.encoder_position);
-    writeF64LE(p + 18, t.present_velocity);
-    writeF64LE(p + 26, t.present_current);
-    writeF64LE(p + 34, t.goal_position);
-    writeF64LE(p + 42, t.goal_velocity);
-    writeF64LE(p + 50, t.goal_current);
-    p[58] = t.error_state;
+    p[0] = t.servo_state;
+    writeF64LE(p + 1, t.present_position);
+    writeF64LE(p + 9, t.encoder_position);
+    writeF64LE(p + 17, t.present_velocity);
+    writeF64LE(p + 25, t.present_current);
+    writeF64LE(p + 33, t.goal_position);
+    writeF64LE(p + 41, t.goal_velocity);
+    writeF64LE(p + 49, t.goal_current);
+    p[57] = t.error_state;
     off += kTelemetryBlockBytes;
     return true;
 }
@@ -133,16 +132,16 @@ bool parseServerFrame(const uint8_t *frame, size_t frameLen, ServoTelemetry axes
     for (size_t a = 0; a < kTelemetryAxisCount; ++a) {
         const uint8_t *b = p + a * kTelemetryBlockBytes;
         ServoTelemetry &t = axesOut[a];
-        t.id_op_mode = b[0];
-        t.servo_state = b[1];
-        t.present_position = readF64LE(b + 2);
-        t.encoder_position = readF64LE(b + 10);
-        t.present_velocity = readF64LE(b + 18);
-        t.present_current = readF64LE(b + 26);
-        t.goal_position = readF64LE(b + 34);
-        t.goal_velocity = readF64LE(b + 42);
-        t.goal_current = readF64LE(b + 50);
-        t.error_state = b[58];
+        t.id_op_mode = 0;
+        t.servo_state = b[0];
+        t.present_position = readF64LE(b + 1);
+        t.encoder_position = readF64LE(b + 9);
+        t.present_velocity = readF64LE(b + 17);
+        t.present_current = readF64LE(b + 25);
+        t.goal_position = readF64LE(b + 33);
+        t.goal_velocity = readF64LE(b + 41);
+        t.goal_current = readF64LE(b + 49);
+        t.error_state = b[57];
     }
     return true;
 }

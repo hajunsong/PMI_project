@@ -98,25 +98,53 @@ QString hardwareErrorToText(uint8_t hw)
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(std::make_unique<Ui::MainWindow>())
-    , m_net(std::make_unique<TcpClient>())
+    , m_cmdNet(std::make_unique<TcpClient>())
+    , m_telemetryNet(std::make_unique<TcpClient>())
 {
     ui->setupUi(this);
 
-    m_net->setCallbacks(
+    m_cmdNet->setCallbacks(
         [this]() {
-            QTimer::singleShot(0, this, [this]() { onNetConnected(); });
+            QTimer::singleShot(0, this, [this]() {
+                m_cmdConnected = true;
+                updateConnectionUiState();
+            });
         },
         [this]() {
-            QTimer::singleShot(0, this, [this]() { onNetDisconnected(); });
+            QTimer::singleShot(0, this, [this]() {
+                m_cmdConnected = false;
+                updateConnectionUiState();
+            });
         },
         [this](std::vector<uint8_t> chunk) {
-            onNetBytesFromWorker(std::move(chunk));
+            onCommandBytesFromWorker(std::move(chunk));
         },
         [this](std::string message) {
             const QString qmsg = QString::fromUtf8(message.data(), static_cast<int>(message.size()));
-            QTimer::singleShot(0, this, [this, qmsg]() { onNetError(qmsg); });
+            QTimer::singleShot(0, this, [this, qmsg]() { onNetError(tr("Command channel: %1").arg(qmsg)); });
         });
-    m_net->start();
+    m_telemetryNet->setCallbacks(
+        [this]() {
+            QTimer::singleShot(0, this, [this]() {
+                m_telemetryConnected = true;
+                updateConnectionUiState();
+            });
+        },
+        [this]() {
+            QTimer::singleShot(0, this, [this]() {
+                m_telemetryConnected = false;
+                updateConnectionUiState();
+            });
+        },
+        [this](std::vector<uint8_t> chunk) {
+            onTelemetryBytesFromWorker(std::move(chunk));
+        },
+        [this](std::string message) {
+            const QString qmsg = QString::fromUtf8(message.data(), static_cast<int>(message.size()));
+            QTimer::singleShot(0, this, [this, qmsg]() { onNetError(tr("Telemetry channel: %1").arg(qmsg)); });
+        });
+    m_cmdNet->start();
+    m_telemetryNet->start();
     m_logCountdownTimer = new QTimer(this);
     m_logCountdownTimer->setInterval(100);
     connect(m_logCountdownTimer, &QTimer::timeout, this, [this]() {
@@ -207,33 +235,45 @@ MainWindow::~MainWindow() = default;
 void MainWindow::onConnectToggled(bool checked)
 {
     if (!checked) {
-        m_net->requestDisconnect();
+        m_cmdNet->requestDisconnect();
+        m_telemetryNet->requestDisconnect();
         return;
     }
 
     const QString host = ui->ipEdit->text().trimmed();
-    bool ok = false;
-    const quint16 port = ui->portEdit->text().trimmed().toUShort(&ok);
-
-    if (host.isEmpty() || !ok || port == 0) {
-        QMessageBox::warning(this, tr("Input error"), tr("Enter a valid IP address and port (1–65535)."));
+    if (host.isEmpty()) {
+        QMessageBox::warning(this, tr("Input error"), tr("Enter a valid IP address."));
         ui->btnConnect->setChecked(false);
         return;
     }
 
     const QByteArray hostUtf8 = host.toUtf8();
-    m_net->requestConnect(std::string(hostUtf8.constData(), static_cast<size_t>(hostUtf8.size())), port);
+    const std::string hostStr(hostUtf8.constData(), static_cast<size_t>(hostUtf8.size()));
+    m_telemetryNet->requestConnect(hostStr, 9000);
+    m_cmdNet->requestConnect(hostStr, 9001);
 }
 
 void MainWindow::onNetConnected()
 {
-    setUiConnected(true);
-    sendClientCmd(pmi::kCmdPing);
+    m_cmdConnected = true;
+    m_telemetryConnected = true;
+    updateConnectionUiState();
+}
+
+void MainWindow::updateConnectionUiState()
+{
+    const bool connected = m_cmdConnected && m_telemetryConnected;
+    setUiConnected(connected);
+    if (connected)
+        sendClientCmd(pmi::kCmdPing);
 }
 
 void MainWindow::onNetDisconnected()
 {
-    m_protocolRx.clear();
+    m_cmdConnected = false;
+    m_telemetryConnected = false;
+    m_telemetryRx.clear();
+    m_commandRx.clear();
     clearTelemetryTable();
     setServoButtonState(false);
     setUiConnected(false);
@@ -244,9 +284,12 @@ void MainWindow::onNetDisconnected()
 void MainWindow::onNetError(const QString &message)
 {
     QMessageBox::warning(this, tr("Network error"), message);
+    m_cmdConnected = false;
+    m_telemetryConnected = false;
     if (ui->btnConnect->isChecked())
         ui->btnConnect->setChecked(false);
-    m_protocolRx.clear();
+    m_telemetryRx.clear();
+    m_commandRx.clear();
     clearTelemetryTable();
     setServoButtonState(false);
     setUiConnected(false);
@@ -255,7 +298,8 @@ void MainWindow::onNetError(const QString &message)
 void MainWindow::setUiConnected(bool connected)
 {
     ui->ipEdit->setEnabled(!connected);
-    ui->portEdit->setEnabled(!connected);
+    ui->portEdit->setEnabled(false);
+    ui->portEdit->setText(QStringLiteral("9000/9001"));
     ui->btnConnect->setText(connected ? tr("Disconnect") : tr("Connect"));
     ui->btnSendWaypoints->setEnabled(connected);
     ui->btnSendInitialPose->setEnabled(connected);
@@ -282,10 +326,10 @@ void MainWindow::updateTrajectoryButtonState(bool connected)
 
 void MainWindow::sendClientCmd(uint8_t cmd)
 {
-    if (!ui->btnConnect->isChecked())
+    if (!(m_cmdConnected && m_telemetryConnected))
         return;
     const std::vector<uint8_t> frame = pmi::buildClientFrame(cmd, {});
-    m_net->requestSend(frame);
+    m_cmdNet->requestSend(frame);
 }
 
 void MainWindow::setServoButtonState(bool servoOn)
@@ -294,63 +338,71 @@ void MainWindow::setServoButtonState(bool servoOn)
     ui->btnServoOn->setText(m_servoOn ? tr("Servo Off") : tr("Servo On"));
 }
 
-void MainWindow::onNetBytesFromWorker(std::vector<uint8_t> chunk)
+void MainWindow::onTelemetryBytesFromWorker(std::vector<uint8_t> chunk)
 {
     auto shared = std::make_shared<std::vector<uint8_t>>(std::move(chunk));
     QTimer::singleShot(0, this, [this, shared]() {
-        m_protocolRx.insert(m_protocolRx.end(), shared->begin(), shared->end());
-        pmi::feedServerMixedRxStream(
-            m_protocolRx,
-            [this](const pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount]) { updateTelemetryTable(axes); },
-            [this](uint8_t msg, const std::vector<uint8_t> &payload) {
-                if (msg != pmi::kSrvAck)
-                    return;
-                const QString text = QString::fromUtf8(reinterpret_cast<const char *>(payload.data()),
-                    static_cast<int>(payload.size()));
-                if (text.startsWith(QStringLiteral("LOG_START_OK:"))) {
-                    ui->labelLogStatus->setText(tr("Status: log file: %1").arg(text.mid(13)));
-                    return;
-                }
-                if (text.startsWith(QStringLiteral("LOG_STOP_OK:"))) {
-                    stopLogCountdown();
-                    ui->labelLogStatus->setText(tr("Status: logging stopped"));
-                    return;
-                }
-                if (text.startsWith(QStringLiteral("LOG_START_FAIL:"))) {
-                    stopLogCountdown();
-                    ui->labelLogStatus->setText(tr("Status: logging start failed (%1)").arg(text.mid(15)));
-                    return;
-                }
-                if (text.startsWith(QStringLiteral("INIT_POSE_PROGRESS:"))) {
-                    const double p = text.mid(19).toDouble();
-                    ui->labelTrajectoryStatus->setText(
-                        tr("Status: init pose moving (%1%)").arg(QString::number(p, 'f', 1)));
-                    return;
-                }
-                if (text == QStringLiteral("INIT_POSE_DONE")) {
-                    ui->labelTrajectoryStatus->setText(tr("Status: init pose completed (100.0%)"));
-                    return;
-                }
-                if (text.startsWith(QStringLiteral("PLAN_OK_CLIPPED:"))) {
-                    const QString rest = text.mid(16);
-                    const int atIdx = rest.indexOf(QLatin1Char('@'));
-                    const QString samples = (atIdx > 0) ? rest.left(atIdx) : rest;
-                    const QString clippedAt = (atIdx > 0) ? rest.mid(atIdx + 1) : QStringLiteral("?");
-                    ui->labelTrajectoryStatus->setText(
-                        tr("Status: planned %1 samples — clipped to joint limits (first @ %2)")
-                            .arg(samples).arg(clippedAt));
-                    return;
-                }
-                if (text.startsWith(QStringLiteral("PLAN_OK:"))) {
-                    ui->labelTrajectoryStatus->setText(tr("Status: planned %1 samples").arg(text.mid(8)));
-                    return;
-                }
-                if (text == QStringLiteral("PLAN_FAIL")) {
-                    ui->labelTrajectoryStatus->setText(tr("Status: plan failed"));
-                    return;
-                }
-                ui->labelLogStatus->setText(tr("Status: %1").arg(text));
-            });
+        m_telemetryRx.insert(m_telemetryRx.end(), shared->begin(), shared->end());
+        pmi::feedServerRxStream(
+            m_telemetryRx,
+            [this](const pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount]) { updateTelemetryTable(axes); });
+    });
+}
+
+void MainWindow::onCommandBytesFromWorker(std::vector<uint8_t> chunk)
+{
+    auto shared = std::make_shared<std::vector<uint8_t>>(std::move(chunk));
+    QTimer::singleShot(0, this, [this, shared]() {
+        m_commandRx.insert(m_commandRx.end(), shared->begin(), shared->end());
+        pmi::feedClientRxStream(m_commandRx, [this](uint8_t msg, const std::vector<uint8_t> &payload) {
+            if (msg != pmi::kSrvAck)
+                return;
+            const QString text = QString::fromUtf8(reinterpret_cast<const char *>(payload.data()),
+                static_cast<int>(payload.size()));
+            if (text.startsWith(QStringLiteral("LOG_START_OK:"))) {
+                ui->labelLogStatus->setText(tr("Status: log file: %1").arg(text.mid(13)));
+                return;
+            }
+            if (text.startsWith(QStringLiteral("LOG_STOP_OK:"))) {
+                stopLogCountdown();
+                ui->labelLogStatus->setText(tr("Status: logging stopped"));
+                return;
+            }
+            if (text.startsWith(QStringLiteral("LOG_START_FAIL:"))) {
+                stopLogCountdown();
+                ui->labelLogStatus->setText(tr("Status: logging start failed (%1)").arg(text.mid(15)));
+                return;
+            }
+            if (text.startsWith(QStringLiteral("INIT_POSE_PROGRESS:"))) {
+                const double p = text.mid(19).toDouble();
+                ui->labelTrajectoryStatus->setText(
+                    tr("Status: init pose moving (%1%)").arg(QString::number(p, 'f', 1)));
+                return;
+            }
+            if (text == QStringLiteral("INIT_POSE_DONE")) {
+                ui->labelTrajectoryStatus->setText(tr("Status: init pose completed (100.0%)"));
+                return;
+            }
+            if (text.startsWith(QStringLiteral("PLAN_OK_CLIPPED:"))) {
+                const QString rest = text.mid(16);
+                const int atIdx = rest.indexOf(QLatin1Char('@'));
+                const QString samples = (atIdx > 0) ? rest.left(atIdx) : rest;
+                const QString clippedAt = (atIdx > 0) ? rest.mid(atIdx + 1) : QStringLiteral("?");
+                ui->labelTrajectoryStatus->setText(
+                    tr("Status: planned %1 samples — clipped to joint limits (first @ %2)")
+                        .arg(samples).arg(clippedAt));
+                return;
+            }
+            if (text.startsWith(QStringLiteral("PLAN_OK:"))) {
+                ui->labelTrajectoryStatus->setText(tr("Status: planned %1 samples").arg(text.mid(8)));
+                return;
+            }
+            if (text == QStringLiteral("PLAN_FAIL")) {
+                ui->labelTrajectoryStatus->setText(tr("Status: plan failed"));
+                return;
+            }
+            ui->labelLogStatus->setText(tr("Status: %1").arg(text));
+        });
     });
 }
 
@@ -408,9 +460,8 @@ void MainWindow::updateTelemetryTable(const pmi::ServoTelemetry axes[pmi::kTelem
         return;
     for (int row = 0; row < static_cast<int>(pmi::kTelemetryAxisCount); ++row) {
         const pmi::ServoTelemetry &t = axes[static_cast<size_t>(row)];
-        const uint8_t op = pmi::telemetryOpModeFromIdOp(t.id_op_mode);
-        m_telemetryModel->item(row, 1)->setText(QString::number(pmi::telemetryIdFromIdOp(t.id_op_mode)));
-        m_telemetryModel->item(row, 2)->setText(opModeToText(op));
+        m_telemetryModel->item(row, 1)->setText(QString::number(row + 1));
+        m_telemetryModel->item(row, 2)->setText(QStringLiteral("-"));
         m_telemetryModel->item(row, 3)->setText(QString::number(t.servo_state));
         m_telemetryModel->item(row, 4)->setText(QString::number(t.present_position, 'f', 4));
         m_telemetryModel->item(row, 5)->setText(std::isfinite(t.encoder_position) ? QString::number(t.encoder_position, 'f', 4)
@@ -504,7 +555,7 @@ bool MainWindow::sendJogVelocityCommand(double signedJointVelDegPerSec, QString 
     for (int b = 0; b < 8; ++b)
         payload.push_back(static_cast<uint8_t>((u >> (8 * b)) & 0xFFu));
 
-    m_net->requestSend(pmi::buildClientFrame(pmi::kCmdJogVelocity, payload));
+    m_cmdNet->requestSend(pmi::buildClientFrame(pmi::kCmdJogVelocity, payload));
     return true;
 }
 
@@ -613,7 +664,7 @@ void MainWindow::onSendWaypointsClicked()
         QMessageBox::warning(this, tr("Waypoint error"), error);
         return;
     }
-    m_net->requestSend(pmi::buildClientFrame(pmi::kCmdSetWaypointBatch, buildWaypointPayload(waypoints)));
+    m_cmdNet->requestSend(pmi::buildClientFrame(pmi::kCmdSetWaypointBatch, buildWaypointPayload(waypoints)));
     m_waypointSent = true;
     updateTrajectoryButtonState(ui->btnConnect->isChecked());
     ui->labelTrajectoryStatus->setText(tr("Status: waypoint sent (%1)").arg(static_cast<int>(waypoints.size())));
@@ -670,7 +721,7 @@ void MainWindow::onSendInitialPoseClicked()
         for (int b = 0; b < 8; ++b)
             payload.push_back(static_cast<uint8_t>((u >> (8 * b)) & 0xFFu));
     }
-    m_net->requestSend(pmi::buildClientFrame(pmi::kCmdSetInitialJointPose, payload));
+    m_cmdNet->requestSend(pmi::buildClientFrame(pmi::kCmdSetInitialJointPose, payload));
     ui->labelTrajectoryStatus->setText(tr("Status: initial pose sent"));
 }
 
@@ -685,7 +736,7 @@ void MainWindow::onSendZeroPoseClicked()
         for (int b = 0; b < 8; ++b)
             payload.push_back(static_cast<uint8_t>((u >> (8 * b)) & 0xFFu));
     }
-    m_net->requestSend(pmi::buildClientFrame(pmi::kCmdSetInitialJointPose, payload));
+    m_cmdNet->requestSend(pmi::buildClientFrame(pmi::kCmdSetInitialJointPose, payload));
     ui->labelTrajectoryStatus->setText(tr("Status: zero pose sent"));
 }
 
@@ -703,7 +754,7 @@ void MainWindow::onLogStartClicked()
     std::memcpy(&u, &durationSec, sizeof(double));
     for (int b = 0; b < 8; ++b)
         payload.push_back(static_cast<uint8_t>((u >> (8 * b)) & 0xFFu));
-    m_net->requestSend(pmi::buildClientFrame(pmi::kCmdLogStart, payload));
+    m_cmdNet->requestSend(pmi::buildClientFrame(pmi::kCmdLogStart, payload));
     startLogCountdown(durationSec);
     ui->labelLogStatus->setText(tr("Status: logging start requested (%1 s)").arg(durationSec, 0, 'f', 1));
 }

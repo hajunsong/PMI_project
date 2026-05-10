@@ -38,7 +38,7 @@ constexpr uint8_t kSof1 = 0xAA;
 constexpr uint8_t kSof2 = 0x55;
 constexpr uint8_t kFrameEof = 0xFE;
 
-constexpr size_t kTelemetryBlockBytes = 59;
+constexpr size_t kTelemetryBlockBytes = 58;
 constexpr size_t kTelemetryAxisCount = 4;
 constexpr size_t kServerPayloadBytes = kTelemetryBlockBytes * kTelemetryAxisCount;
 
@@ -49,7 +49,8 @@ constexpr size_t kServerFrameBytes = 2 + 1 + kServerPayloadBytes + 1 + 1;
 constexpr size_t kServerRxPruneCapBytes = 16384;
 
 struct ServoTelemetry {
-    /// Packed byte: high nibble = ID, low nibble = operating mode (Op). See `packTelemetryIdOp`.
+    /// Packed byte: high nibble = ID, low nibble = operating mode (Op). Runtime-local metadata.
+    /// Not serialized in the telemetry payload.
     uint8_t id_op_mode = 0;
     uint8_t servo_state = 0;
     /// SI-style fields (PMI_Server converts from DYNAMIXEL raw): degrees, deg/s, amperes.

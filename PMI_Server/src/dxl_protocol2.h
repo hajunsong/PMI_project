@@ -2,9 +2,9 @@
 #define DXL_PROTOCOL2_H
 
 // DYNAMIXEL Protocol 2.0 (XM540-W270) via ROBOTIS DynamixelSDK.
-// Telemetry: per-axis readTxRx of a 22-byte Indirect Data block (4 transactions per loop). Broadcast
-// GroupSyncRead is intentionally avoided — on USB-CDC bridges (OpenCM9.04 / /dev/ttyACM*) it produces
-// chronic -3002 framing errors because the kernel bunches back-to-back status packets.
+// Telemetry: persistent GroupSyncRead of a 23-byte Indirect Data block (1 broadcast transaction for
+// all 4 motors per loop). Requires a U2D2 / native USB-RS485 adapter on /dev/ttyUSB*; USB-CDC bridges
+// (OpenCM9.04 / /dev/ttyACM*) bunch back-to-back status packets and cause -3002 framing errors.
 // Commands: persistent GroupSyncWrite to indirect-data goal block (one bus transaction per goal type;
 // writes have no per-ID response so broadcast is safe here).
 // Operating Mode (addr 11) is in EEPROM and cannot be Indirect-mapped — it is cached locally
@@ -23,6 +23,7 @@
 namespace dynamixel {
 class PortHandler;
 class PacketHandler;
+class GroupSyncRead;
 class GroupSyncWrite;
 } // namespace dynamixel
 
@@ -38,11 +39,8 @@ public:
     void close();
     bool isOpen() const;
 
-    /// Per-axis read of the indirect-data block (1 readTxRx per motor, 22 bytes each).
-    /// On OpenCM9.04 / USB-CDC bridges, broadcast GroupSyncRead is unreliable because the
-    /// kernel can bunch multiple status packets into a single USB transfer that breaks the
-    /// SDK's per-ID framing — non-broadcast readTxRx avoids that and is still ~8× faster
-    /// than the old "8 reads per axis" loop.
+    /// Broadcast GroupSyncRead of the 23-byte indirect-data block (1 transaction for all 4 motors).
+    /// Requires a U2D2 or equivalent USB-RS485 adapter on /dev/ttyUSB*.
     bool syncReadTelemetry(pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount]);
 
     /// Torque / operating mode via GroupSyncWrite.
@@ -79,8 +77,8 @@ private:
 
     dynamixel::PortHandler *port_ = nullptr;
     dynamixel::PacketHandler *packet_ = nullptr;
-    // Read side uses per-axis readTxRx (no broadcast) — see syncReadTelemetry doc-comment.
-    dynamixel::GroupSyncWrite *sync_write_goal_current_ = nullptr;
+    dynamixel::GroupSyncRead  *sync_read_telemetry_      = nullptr;
+    dynamixel::GroupSyncWrite *sync_write_goal_current_  = nullptr;
     dynamixel::GroupSyncWrite *sync_write_goal_velocity_ = nullptr;
     dynamixel::GroupSyncWrite *sync_write_goal_position_ = nullptr;
     int amt21_fd_ = -1;

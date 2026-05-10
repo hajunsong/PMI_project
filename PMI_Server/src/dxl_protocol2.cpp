@@ -1,8 +1,7 @@
 // DYNAMIXEL SDK: PortHandler, PacketHandler.
-//   Telemetry: 4× per-axis readTxRx of a 22-byte Indirect Data block. Broadcast GroupSyncRead is
-//              avoided because it triggers chronic -3002 framing errors on USB-CDC bridges
-//              (OpenCM9.04 / /dev/ttyACM*) — the kernel bunches multiple status packets into a
-//              single USB IN transfer and the SDK's per-ID readRx loop mis-frames them.
+//   Telemetry: persistent GroupSyncRead of a 23-byte Indirect Data block (1 broadcast TxRx for all
+//              4 motors per loop). Requires U2D2 / /dev/ttyUSB*. USB-CDC bridges (/dev/ttyACM*) bunch
+//              multiple status packets into a single USB IN transfer causing -3002 framing errors.
 //   Goals:     persistent GroupSyncWrite per goal-type, routed through the write-side Indirect Data
 //              block. Writes have no per-ID status response, so broadcast is safe here.
 //   Reboot resets the indirect-address mappings, so they are re-applied on connect & after Reset.
@@ -26,7 +25,6 @@
 #include <dynamixel_sdk/dynamixel_sdk.h>
 #include <cstdlib>
 #include <fstream>
-
 namespace {
 
 constexpr uint8_t kMotorIds[pmi::kTelemetryAxisCount] = {1, 2, 3, 4};
@@ -37,12 +35,14 @@ constexpr int kAmt21ResolutionBits = 14;
 constexpr int kAmt21BaudRate = 115200;
 constexpr const char *kAmt21DevicePath = "/dev/ttyU2D2";
 
+constexpr uint16_t kAddrReturnDelayTime = 9;   // EEPROM — unit: 2 µs; 0 = minimum latency
 constexpr uint16_t kAddrOperatingMode = 11;   // EEPROM — cached, NOT in indirect block
 constexpr uint16_t kAddrTorqueEnable = 64;
 constexpr uint16_t kAddrHardwareError = 70;
 constexpr uint16_t kAddrGoalCurrent = 102;
 constexpr uint16_t kAddrGoalVelocity = 104;
 constexpr uint16_t kAddrGoalPosition = 116;
+constexpr uint16_t kAddrMoving = 122;
 constexpr uint16_t kAddrPresentCurrent = 126;
 constexpr uint16_t kAddrPresentVelocity = 128;
 constexpr uint16_t kAddrPresentPosition = 132;
@@ -55,24 +55,25 @@ constexpr uint16_t kAddrIndirectDataRead = 224;   // Indirect Data 1 .. 22
 constexpr uint16_t kAddrIndirectAddrWrite = 578;  // Indirect Address 29 .. 38 (10 bytes for goals)
 constexpr uint16_t kAddrIndirectDataWrite = 634;  // Indirect Data 29 .. 38
 
-// Read block layout (22 bytes, contiguous in indirect data):
+// Read block layout (23 bytes, contiguous in indirect data) - aligned with dxl_test:
 //   offset  0  : Torque Enable        (src 64,  1 B)
-//   offset  1  : Hardware Error       (src 70,  1 B)
-//   offset  2  : Goal Current         (src 102, 2 B)
-//   offset  4  : Goal Velocity        (src 104, 4 B)
-//   offset  8  : Goal Position        (src 116, 4 B)
-//   offset 12  : Present Current      (src 126, 2 B)
-//   offset 14  : Present Velocity     (src 128, 4 B)
-//   offset 18  : Present Position     (src 132, 4 B)
-constexpr uint16_t kReadBlockLength = 22;
+//   offset  1  : Present Position     (src 132, 4 B)
+//   offset  5  : Present Velocity     (src 128, 4 B)
+//   offset  9  : Present Current      (src 126, 2 B)
+//   offset 11  : Hardware Error       (src 70,  1 B)
+//   offset 12  : Goal Position        (src 116, 4 B)
+//   offset 16  : Goal Velocity        (src 104, 4 B)
+//   offset 20  : Goal Current         (src 102, 2 B)
+//   offset 22  : Moving               (src 122, 1 B)
+constexpr uint16_t kReadBlockLength = 23;
 constexpr uint16_t kReadOffTorque = 0;
-constexpr uint16_t kReadOffHwErr = 1;
-constexpr uint16_t kReadOffGoalCur = 2;
-constexpr uint16_t kReadOffGoalVel = 4;
-constexpr uint16_t kReadOffGoalPos = 8;
-constexpr uint16_t kReadOffPresCur = 12;
-constexpr uint16_t kReadOffPresVel = 14;
-constexpr uint16_t kReadOffPresPos = 18;
+constexpr uint16_t kReadOffPresPos = 1;
+constexpr uint16_t kReadOffPresVel = 5;
+constexpr uint16_t kReadOffPresCur = 9;
+constexpr uint16_t kReadOffHwErr = 11;
+constexpr uint16_t kReadOffGoalPos = 12;
+constexpr uint16_t kReadOffGoalVel = 16;
+constexpr uint16_t kReadOffGoalCur = 20;
 
 // Write block layout (10 bytes): Goal Current (2 B) | Goal Velocity (4 B) | Goal Position (4 B).
 constexpr uint16_t kWriteOffGoalCur = 0;
@@ -173,6 +174,10 @@ bool DxlBus::isOpen() const
 
 void DxlBus::destroySyncGroupsUnlocked()
 {
+    if (sync_read_telemetry_) {
+        delete sync_read_telemetry_;
+        sync_read_telemetry_ = nullptr;
+    }
     if (sync_write_goal_current_) {
         delete sync_write_goal_current_;
         sync_write_goal_current_ = nullptr;
@@ -229,7 +234,7 @@ bool DxlBus::open(const char *devicePath, int baudRate)
     // Apply indirect-address mappings (motors come up with torque OFF, so writes to addresses 168+/578+
     // are accepted). Then build persistent GroupSyncWrite instances against the write-side indirect
     // data block. This is the path that turns a per-loop 8×4 = 32 read-transactions into 4 (one
-    // 22-byte readTxRx per axis through the indirect-data block).
+    // 23-byte readTxRx per axis through the indirect-data block).
     if (!setupIndirectMappingsUnlocked())
         std::cerr << "[DXL] indirect-address setup encountered errors (telemetry may be partially zero)\n";
     rebuildSyncGroupsUnlocked();
@@ -248,17 +253,18 @@ bool DxlBus::setupIndirectMappingsUnlocked()
     // Order of source addresses for the read block — must mirror the offsets at the top of this file.
     static constexpr uint16_t kReadSrc[kReadBlockLength] = {
         kAddrTorqueEnable,                                                          // 1
-        kAddrHardwareError,                                                         // 1
-        kAddrGoalCurrent, static_cast<uint16_t>(kAddrGoalCurrent + 1),              // 2
-        kAddrGoalVelocity, static_cast<uint16_t>(kAddrGoalVelocity + 1),
-        static_cast<uint16_t>(kAddrGoalVelocity + 2), static_cast<uint16_t>(kAddrGoalVelocity + 3), // 4
-        kAddrGoalPosition, static_cast<uint16_t>(kAddrGoalPosition + 1),
-        static_cast<uint16_t>(kAddrGoalPosition + 2), static_cast<uint16_t>(kAddrGoalPosition + 3), // 4
-        kAddrPresentCurrent, static_cast<uint16_t>(kAddrPresentCurrent + 1),                        // 2
-        kAddrPresentVelocity, static_cast<uint16_t>(kAddrPresentVelocity + 1),
-        static_cast<uint16_t>(kAddrPresentVelocity + 2), static_cast<uint16_t>(kAddrPresentVelocity + 3), // 4
         kAddrPresentPosition, static_cast<uint16_t>(kAddrPresentPosition + 1),
         static_cast<uint16_t>(kAddrPresentPosition + 2), static_cast<uint16_t>(kAddrPresentPosition + 3), // 4
+        kAddrPresentVelocity, static_cast<uint16_t>(kAddrPresentVelocity + 1),
+        static_cast<uint16_t>(kAddrPresentVelocity + 2), static_cast<uint16_t>(kAddrPresentVelocity + 3), // 4
+        kAddrPresentCurrent, static_cast<uint16_t>(kAddrPresentCurrent + 1),                        // 2
+        kAddrHardwareError,                                                         // 1
+        kAddrGoalPosition, static_cast<uint16_t>(kAddrGoalPosition + 1),
+        static_cast<uint16_t>(kAddrGoalPosition + 2), static_cast<uint16_t>(kAddrGoalPosition + 3), // 4
+        kAddrGoalVelocity, static_cast<uint16_t>(kAddrGoalVelocity + 1),
+        static_cast<uint16_t>(kAddrGoalVelocity + 2), static_cast<uint16_t>(kAddrGoalVelocity + 3), // 4
+        kAddrGoalCurrent, static_cast<uint16_t>(kAddrGoalCurrent + 1),              // 2
+        kAddrMoving,                                                                 // 1
     };
     static constexpr uint16_t kWriteSrc[10] = {
         kAddrGoalCurrent, static_cast<uint16_t>(kAddrGoalCurrent + 1),
@@ -297,6 +303,19 @@ bool DxlBus::setupIndirectMappingsUnlocked()
             // run kCmdResetError (Reset button) eventually to clear addr 70.
             std::cerr << "[DXL] note: id=" << static_cast<int>(id)
                       << " has stored hardware-error (alert bit set) — indirect setup continuing\n";
+        }
+
+        // Set Return Delay Time (addr 9, EEPROM) to 0 (minimum = 0 µs) while torque is already
+        // OFF. Default is 250 (= 500 µs); setting 0 removes this per-packet latency from every
+        // GroupSyncRead response, cutting the read cycle by up to 4 × 500 µs = 2 ms at 1 Mbaud.
+        err = 0;
+        const int rRdt = packet_->write1ByteTxRx(port_, id, kAddrReturnDelayTime, 0, &err);
+        if (rRdt != COMM_SUCCESS || (err & kInstrErrMask) != 0) {
+            std::cerr << "[DXL] Return Delay Time set failed (id=" << static_cast<int>(id)
+                      << ") rc=" << packet_->getTxRxResult(rRdt) << " dxl_err=0x"
+                      << std::hex << static_cast<int>(err) << std::dec << "\n";
+        } else {
+            std::cerr << "[DXL] Return Delay Time = 0 set for id=" << static_cast<int>(id) << "\n";
         }
 
         for (size_t k = 0; k < kReadBlockLength; ++k) {
@@ -357,6 +376,11 @@ void DxlBus::rebuildSyncGroupsUnlocked()
     destroySyncGroupsUnlocked();
     if (!port_ || !packet_)
         return;
+
+    sync_read_telemetry_ = new dynamixel::GroupSyncRead(
+        port_, packet_, kAddrIndirectDataRead, kReadBlockLength);
+    for (size_t i = 0; i < pmi::kTelemetryAxisCount; ++i)
+        (void)sync_read_telemetry_->addParam(kMotorIds[i]);
 
     sync_write_goal_current_ = new dynamixel::GroupSyncWrite(
         port_, packet_, static_cast<uint16_t>(kAddrIndirectDataWrite + kWriteOffGoalCur), 2);
@@ -439,8 +463,9 @@ bool DxlBus::readAmt21AngleDegUnlocked(uint8_t nodeAddress, double &angleDegOut)
         return false;
     ::tcdrain(amt21_fd_);
 
+    // 115200 baud: wire time ~260 µs + USB round-trip ~2 ms → 5 ms gives 2× margin.
     uint8_t rx[2]{0, 0};
-    if (readExactWithTimeout(amt21_fd_, rx, 2, 50) != 2)
+    if (readExactWithTimeout(amt21_fd_, rx, 2, 5) != 2)
         return false;
 
     const uint16_t raw = (static_cast<uint16_t>(rx[1]) << 8) | rx[0];
@@ -463,57 +488,54 @@ void DxlBus::close()
 
 bool DxlBus::syncReadRawTelemetryUnlocked(pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount])
 {
-    if (!port_ || !packet_)
+    if (!port_ || !packet_ || !sync_read_telemetry_)
         return false;
 
-    // Per-axis read of the 22-byte indirect-data block. We deliberately do NOT use GroupSyncRead
-    // here: with USB-CDC bridges (e.g. OpenCM9.04 → /dev/ttyACM*), back-to-back status packets get
-    // bunched into a single USB IN transfer and the SDK's per-ID readRx framing fails with -3002.
-    // 4 single-ID readTxRx calls are still only 4 transactions per loop (vs the previous 32) and
-    // each one finishes its own complete TxRx round-trip before the next starts, so there is no
-    // ambiguity for the kernel/SDK to mis-frame.
-    auto readU16Le = [](const uint8_t *p) -> uint16_t {
-        return static_cast<uint16_t>(p[0]) | (static_cast<uint16_t>(p[1]) << 8);
-    };
-    auto readU32Le = [](const uint8_t *p) -> uint32_t {
-        return static_cast<uint32_t>(p[0]) | (static_cast<uint32_t>(p[1]) << 8)
-            | (static_cast<uint32_t>(p[2]) << 16) | (static_cast<uint32_t>(p[3]) << 24);
-    };
+    // Broadcast GroupSyncRead: one instruction packet → 4 status packets, all collected in one
+    // txRxPacket() call. Valid on U2D2 / /dev/ttyUSB*. Each motor returns its 23-byte indirect
+    // data block in a single response, which the SDK demultiplexes per-ID.
+    const int rc = sync_read_telemetry_->txRxPacket();
+    if (rc != COMM_SUCCESS) {
+        std::cerr << "[DXL] GroupSyncRead failed: " << packet_->getTxRxResult(rc)
+                  << " (rc=" << rc << ")\n";
+        port_->clearPort();
+        return false;
+    }
 
     for (size_t i = 0; i < pmi::kTelemetryAxisCount; ++i) {
         const uint8_t id = kMotorIds[i];
-        uint8_t buf[kReadBlockLength]{};
-        uint8_t err = 0;
-        const int rc = packet_->readTxRx(port_, id, kAddrIndirectDataRead, kReadBlockLength, buf, &err);
-        if (rc != COMM_SUCCESS) {
-            std::cerr << "[DXL] indirect read failed (id=" << static_cast<int>(id)
-                      << "): " << packet_->getTxRxResult(rc) << " (rc=" << rc << ")\n";
-            // Flush any partial bytes left in the RX buffer to avoid cascading framing errors.
-            port_->clearPort();
+        if (!sync_read_telemetry_->isAvailable(id, kAddrIndirectDataRead, kReadBlockLength)) {
+            std::cerr << "[DXL] GroupSyncRead: no data for id=" << static_cast<int>(id) << "\n";
             return false;
         }
-        // The Indirect Address layout was set up so consecutive source bytes occupy consecutive
-        // indirect-data offsets, so multi-byte values can be reassembled little-endian directly.
-        const uint8_t torqueOn = buf[kReadOffTorque];
-        const uint8_t hwErr = buf[kReadOffHwErr];
-        const int16_t goalCurRaw = static_cast<int16_t>(readU16Le(buf + kReadOffGoalCur));
-        const int32_t goalVelRaw = static_cast<int32_t>(readU32Le(buf + kReadOffGoalVel));
-        const int32_t goalPosRaw = static_cast<int32_t>(readU32Le(buf + kReadOffGoalPos));
-        const int16_t presCurRaw = static_cast<int16_t>(readU16Le(buf + kReadOffPresCur));
-        const int32_t presVelRaw = static_cast<int32_t>(readU32Le(buf + kReadOffPresVel));
-        const int32_t presPosRaw = static_cast<int32_t>(readU32Le(buf + kReadOffPresPos));
 
-        // op mode comes from the local cache (EEPROM register; can't be indirect-mapped).
-        axes[i].id_op_mode = pmi::packTelemetryIdOp(id, op_mode_cache_[i]);
-        axes[i].servo_state = torqueOn ? 1 : 0;
+        const uint8_t  torqueOn   = static_cast<uint8_t>(
+            sync_read_telemetry_->getData(id, kAddrIndirectDataRead + kReadOffTorque,  1));
+        const uint8_t  hwErr      = static_cast<uint8_t>(
+            sync_read_telemetry_->getData(id, kAddrIndirectDataRead + kReadOffHwErr,   1));
+        const int16_t  goalCurRaw = static_cast<int16_t>(
+            sync_read_telemetry_->getData(id, kAddrIndirectDataRead + kReadOffGoalCur, 2));
+        const int32_t  goalVelRaw = static_cast<int32_t>(
+            sync_read_telemetry_->getData(id, kAddrIndirectDataRead + kReadOffGoalVel, 4));
+        const int32_t  goalPosRaw = static_cast<int32_t>(
+            sync_read_telemetry_->getData(id, kAddrIndirectDataRead + kReadOffGoalPos, 4));
+        const int16_t  presCurRaw = static_cast<int16_t>(
+            sync_read_telemetry_->getData(id, kAddrIndirectDataRead + kReadOffPresCur, 2));
+        const int32_t  presVelRaw = static_cast<int32_t>(
+            sync_read_telemetry_->getData(id, kAddrIndirectDataRead + kReadOffPresVel, 4));
+        const int32_t  presPosRaw = static_cast<int32_t>(
+            sync_read_telemetry_->getData(id, kAddrIndirectDataRead + kReadOffPresPos, 4));
+
+        axes[i].id_op_mode       = pmi::packTelemetryIdOp(id, op_mode_cache_[i]);
+        axes[i].servo_state      = torqueOn ? 1 : 0;
         axes[i].present_position = static_cast<double>(presPosRaw) * kPulseToDeg;
         axes[i].encoder_position = std::nan("");
         axes[i].present_velocity = static_cast<double>(presVelRaw) * kVelRawToRpm * kRpmToDegPerSec;
-        axes[i].present_current = static_cast<double>(presCurRaw) * kCurRawToMa * kMaToA;
-        axes[i].goal_position = static_cast<double>(goalPosRaw) * kPulseToDeg;
-        axes[i].goal_velocity = static_cast<double>(goalVelRaw) * kVelRawToRpm * kRpmToDegPerSec;
-        axes[i].goal_current = static_cast<double>(goalCurRaw) * kCurRawToMa * kMaToA;
-        axes[i].error_state = hwErr;
+        axes[i].present_current  = static_cast<double>(presCurRaw) * kCurRawToMa * kMaToA;
+        axes[i].goal_position    = static_cast<double>(goalPosRaw) * kPulseToDeg;
+        axes[i].goal_velocity    = static_cast<double>(goalVelRaw) * kVelRawToRpm * kRpmToDegPerSec;
+        axes[i].goal_current     = static_cast<double>(goalCurRaw) * kCurRawToMa * kMaToA;
+        axes[i].error_state      = hwErr;
     }
 
     // 3) AMT21 absolute encoders on the secondary UART (axes 1–3 only).

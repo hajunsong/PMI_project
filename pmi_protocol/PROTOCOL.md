@@ -91,10 +91,10 @@ All frames start with `SOF1 SOF2` and end with `EOF`.
 
 ### 3.2 Size
 
-- Per-axis telemetry block: `59 bytes`
+- Per-axis telemetry block: `58 bytes`
 - Axis count: `4`
-- Payload size: `59 * 4 = 236 bytes`
-- Full frame size: `2 + 1 + 236 + 1 + 1 = 241 bytes`
+- Payload size: `58 * 4 = 232 bytes`
+- Full frame size: `2 + 1 + 232 + 1 + 1 = 237 bytes`
 
 ### 3.3 Checksum
 
@@ -114,31 +114,19 @@ All frames start with `SOF1 SOF2` and end with `EOF`.
 
 ---
 
-## 4. Per-axis telemetry block (59 bytes)
+## 4. Per-axis telemetry block (58 bytes)
 
 Each axis block is serialized in little-endian format:
 
-- `offset 0`   : `id_op_mode` (uint8)
-- `offset 1`   : `servo_state` (uint8)
-- `offset 2`   : `present_position` (float64, 8 bytes)
-- `offset 10`  : `encoder_position` (float64, 8 bytes)
-- `offset 18`  : `present_velocity` (float64, 8 bytes)
-- `offset 26`  : `present_current` (float64, 8 bytes)
-- `offset 34`  : `goal_position` (float64, 8 bytes)
-- `offset 42`  : `goal_velocity` (float64, 8 bytes)
-- `offset 50`  : `goal_current` (float64, 8 bytes)
-- `offset 58`  : `error_state` (uint8)
-
-### 4.1 `id_op_mode` packing
-
-- High nibble: motor ID
-- Low nibble: operation mode
-
-Helper logic in code:
-
-- `packTelemetryIdOp(id, op)`
-- `telemetryIdFromIdOp(id_op_mode)`
-- `telemetryOpModeFromIdOp(id_op_mode)`
+- `offset 0`   : `servo_state` (uint8)
+- `offset 1`   : `present_position` (float64, 8 bytes)
+- `offset 9`   : `encoder_position` (float64, 8 bytes)
+- `offset 17`  : `present_velocity` (float64, 8 bytes)
+- `offset 25`  : `present_current` (float64, 8 bytes)
+- `offset 33`  : `goal_position` (float64, 8 bytes)
+- `offset 41`  : `goal_velocity` (float64, 8 bytes)
+- `offset 49`  : `goal_current` (float64, 8 bytes)
+- `offset 57`  : `error_state` (uint8)
 
 ---
 
@@ -156,7 +144,7 @@ Helper logic in code:
 
 ## 6. Runtime timing (current implementation)
 
-- Server <-> motor/encoder polling: `5 ms`
-- Server -> client telemetry send: `100 ms`
+- Server <-> motor/encoder polling: `2 ms`
+- Server -> client telemetry send: `100 ms` (port `9000`, telemetry-only)
+- Client <-> server command/ACK exchange: `100 ms` cadence (port `9001`)
 - Server terminal telemetry log print: `1 s`
-

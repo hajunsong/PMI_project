@@ -17,6 +17,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -453,7 +454,7 @@ void stopJogRestoreHardware(JogState &j, DxlBus *dxl)
 
 } // namespace
 
-void TcpServer::clientSession(int cfd)
+void TcpServer::commandSession(int cfd)
 {
     setNoDelay(cfd);
     (void)setNonBlock(cfd);
@@ -463,13 +464,18 @@ void TcpServer::clientSession(int cfd)
 
     std::vector<uint8_t> rx;
     rx.reserve(4096);
+    std::mutex rxMutex;
+    std::vector<uint8_t> rxShared;
+    rxShared.reserve(4096);
+    std::mutex ackMutex;
+    std::atomic<bool> running{true};
 
     using clock = std::chrono::steady_clock;
     auto nextPoll = clock::now();
-    auto nextTx = clock::now();
-    constexpr int kPollPeriodMs = 1;
+    constexpr int kPollPeriodMs = 2;
     constexpr auto kPollPeriod = std::chrono::milliseconds(kPollPeriodMs);
-    constexpr auto kTxPeriod = std::chrono::milliseconds(100);
+    constexpr auto kCommandCommPeriod = std::chrono::milliseconds(100);
+    std::deque<std::vector<uint8_t>> pendingCommandFrames;
     uint64_t txTick = 0;
     auto lastDxlTelemetryLog = clock::time_point{};
     auto lastDxlFailLog = clock::time_point{};
@@ -479,7 +485,7 @@ void TcpServer::clientSession(int cfd)
     PathPlanner planner;
     std::vector<PathPlanner::Waypoint> waypoints;
     ServerLogger logger;
-    // 1 ms poll: `kPlannerDt` == control period == quintic path step (`plan(dt)`) == PI integral dt.
+    // 2 ms poll: `kPlannerDt` == control period == quintic path step (`plan(dt)`) == PI integral dt.
     constexpr double kPlannerDt = static_cast<double>(kPollPeriodMs) / 1000.0;
     constexpr double kGear[4] = {32.0 / 60.0, 54.0 / 360.0, 108.0 / 360.0, 108.0 / 360.0};
     // External encoder direction compensation per axis (axis4 reversed).
@@ -508,8 +514,79 @@ void TcpServer::clientSession(int cfd)
     // "not running" to "running". Used by the gain-ramp scaling at the top of each VSD step.
     bool vsdPlannerWasRunning = false;
     auto vsdRampStart = clock::time_point{};
+    auto enqueueCommandFrame = [&](std::vector<uint8_t> frame) {
+        if (!frame.empty())
+            std::lock_guard<std::mutex> lock(ackMutex);
+            pendingCommandFrames.emplace_back(std::move(frame));
+    };
 
-    while (true) {
+    std::thread netThread([&]() {
+        using net_clock = std::chrono::steady_clock;
+        auto nextCommandTx = net_clock::now();
+        pollfd pfd{};
+        pfd.fd = cfd;
+        pfd.events = POLLIN;
+        while (running.load()) {
+            int timeoutMs = 20;
+            const auto msToNextTx = std::chrono::duration_cast<std::chrono::milliseconds>(nextCommandTx - net_clock::now()).count();
+            if (msToNextTx > 0 && msToNextTx < timeoutMs)
+                timeoutMs = static_cast<int>(msToNextTx);
+            if (timeoutMs < 0)
+                timeoutMs = 0;
+
+            const int pr = ::poll(&pfd, 1, timeoutMs);
+            if (pr < 0) {
+                if (errno == EINTR)
+                    continue;
+                running.store(false);
+                break;
+            }
+            if (pr > 0 && (pfd.revents & (POLLERR | POLLHUP | POLLNVAL))) {
+                running.store(false);
+                break;
+            }
+            if (pr > 0 && (pfd.revents & POLLIN)) {
+                char buf[4096];
+                while (running.load()) {
+                    const ssize_t n = ::recv(cfd, buf, sizeof buf, MSG_DONTWAIT);
+                    if (n > 0) {
+                        std::lock_guard<std::mutex> lock(rxMutex);
+                        rxShared.insert(rxShared.end(), buf, buf + n);
+                        continue;
+                    }
+                    if (n == 0) {
+                        running.store(false);
+                        break;
+                    }
+                    if (errno == EAGAIN || errno == EWOULDBLOCK)
+                        break;
+                    if (errno == EINTR)
+                        continue;
+                    running.store(false);
+                    break;
+                }
+            }
+
+            const auto now = net_clock::now();
+            if (now >= nextCommandTx) {
+                nextCommandTx = now + kCommandCommPeriod;
+                std::deque<std::vector<uint8_t>> frames;
+                {
+                    std::lock_guard<std::mutex> lock(ackMutex);
+                    frames.swap(pendingCommandFrames);
+                }
+                while (!frames.empty()) {
+                    if (!sendTelemetryFrameNonBlock(cfd, frames.front())) {
+                        running.store(false);
+                        break;
+                    }
+                    frames.pop_front();
+                }
+            }
+        }
+    });
+
+    while (running.load()) {
         const auto now = clock::now();
         if (now >= nextPoll) {
             nextPoll = now + kPollPeriod;
@@ -586,8 +663,8 @@ void TcpServer::clientSession(int cfd)
                     if (lastInitProgressAck == clock::time_point{} || now - lastInitProgressAck >= kAckInterval) {
                         lastInitProgressAck = now;
                         const std::string msg = "INIT_POSE_PROGRESS:" + std::to_string(progressPercent);
-                        (void)sendTelemetryFrameNonBlock(
-                            cfd, pmi::buildServerAckFrame(pmi::kSrvAck, std::vector<uint8_t>(msg.begin(), msg.end())));
+                        enqueueCommandFrame(
+                            pmi::buildServerAckFrame(pmi::kSrvAck, std::vector<uint8_t>(msg.begin(), msg.end())));
                     }
 
                     if (r >= 1.0) {
@@ -601,8 +678,8 @@ void TcpServer::clientSession(int cfd)
                             planner.setInitialJointRad(initPoseMotion.qTargetRad);
                             extVelControl.active = true;
                             const std::string msg = "INIT_POSE_DONE";
-                            (void)sendTelemetryFrameNonBlock(
-                                cfd, pmi::buildServerAckFrame(pmi::kSrvAck, std::vector<uint8_t>(msg.begin(), msg.end())));
+                            enqueueCommandFrame(
+                                pmi::buildServerAckFrame(pmi::kSrvAck, std::vector<uint8_t>(msg.begin(), msg.end())));
                             endInitPoseTemporaryVelocity(m_dxl.get(), initPoseMotion);
                             std::cerr << "[PMI] initial joint pose: quintic done (no telemetry — skipping reach check)\n";
                         }
@@ -631,8 +708,8 @@ void TcpServer::clientSession(int cfd)
                     if (lastInitProgressAck == clock::time_point{} || now - lastInitProgressAck >= kAckInterval) {
                         lastInitProgressAck = now;
                         const std::string msg = "INIT_POSE_PROGRESS:100.0";
-                        (void)sendTelemetryFrameNonBlock(
-                            cfd, pmi::buildServerAckFrame(pmi::kSrvAck, std::vector<uint8_t>(msg.begin(), msg.end())));
+                        enqueueCommandFrame(
+                            pmi::buildServerAckFrame(pmi::kSrvAck, std::vector<uint8_t>(msg.begin(), msg.end())));
                     }
 
                     if (withinTol || waitSec >= kInitPoseReachMaxWaitSec) {
@@ -644,8 +721,8 @@ void TcpServer::clientSession(int cfd)
                             extVelControl.targetJointDeg[i] = initPoseMotion.qTargetRad[i] * 180.0 / M_PI;
                         extVelControl.active = true;
                         const std::string msg = "INIT_POSE_DONE";
-                        (void)sendTelemetryFrameNonBlock(
-                            cfd, pmi::buildServerAckFrame(pmi::kSrvAck, std::vector<uint8_t>(msg.begin(), msg.end())));
+                        enqueueCommandFrame(
+                            pmi::buildServerAckFrame(pmi::kSrvAck, std::vector<uint8_t>(msg.begin(), msg.end())));
                         endInitPoseTemporaryVelocity(m_dxl.get(), initPoseMotion);
                         std::cerr << "[PMI] initial joint pose completed ("
                                     << (withinTol ? "within reach tolerance" : "timeout") << ")\n";
@@ -654,6 +731,12 @@ void TcpServer::clientSession(int cfd)
             }
 
             logger.updateLatest(latestAxes, haveLatestTelemetry, pathDesired, extVelControl.active, extVelControl.targetJointDeg);
+            if (haveLatestTelemetry) {
+                std::lock_guard<std::mutex> lock(m_latestMutex);
+                for (size_t i = 0; i < pmi::kTelemetryAxisCount; ++i)
+                    m_latestAxes[i] = latestAxes[i];
+                m_haveLatestTelemetry = true;
+            }
 
             if (m_dxl && m_dxl->isOpen() && jogState.active) {
                 std::array<double, pmi::kTelemetryAxisCount> motorVelCmdDegPerSec{};
@@ -861,56 +944,17 @@ void TcpServer::clientSession(int cfd)
             }
         }
 
-        if (now >= nextTx) {
-            nextTx = now + kTxPeriod;
-            if (haveLatestTelemetry) {
-                const std::vector<uint8_t> frame = pmi::buildServerFrame(latestAxes);
-                if (!frame.empty() && !sendTelemetryFrameNonBlock(cfd, frame))
-                    goto client_done;
+        {
+            std::lock_guard<std::mutex> lock(rxMutex);
+            if (!rxShared.empty()) {
+                rx.insert(rx.end(), rxShared.begin(), rxShared.end());
+                rxShared.clear();
             }
         }
-
-        int timeoutMs = 50;
-        const auto soonestDeadline = (nextPoll < nextTx) ? nextPoll : nextTx;
-        const auto msToNext = std::chrono::duration_cast<std::chrono::milliseconds>(soonestDeadline - clock::now()).count();
-        if (msToNext > 0 && msToNext < timeoutMs)
-            timeoutMs = static_cast<int>(msToNext);
-        if (timeoutMs < 0)
-            timeoutMs = 0;
-
-        pollfd pfd{};
-        pfd.fd = cfd;
-        pfd.events = POLLIN;
-        const int pr = ::poll(&pfd, 1, timeoutMs);
-        if (pr < 0) {
-            if (errno == EINTR)
-                continue;
-            goto client_done;
-        }
-
-        if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL))
-            goto client_done;
-
-        if (pfd.revents & POLLIN) {
-            char buf[4096];
-            while (true) {
-                const ssize_t n = ::recv(cfd, buf, sizeof buf, 0);
-                if (n > 0) {
-                    rx.insert(rx.end(), buf, buf + n);
-                } else if (n == 0) {
-                    goto client_done;
-                } else {
-                    if (errno == EAGAIN || errno == EWOULDBLOCK)
-                        break;
-                    if (errno == EINTR)
-                        continue;
-                    goto client_done;
-                }
-            }
-
+        if (!rx.empty()) {
             pmi::feedClientRxStream(
                 rx, [this, &planner, &waypoints, &latestAxes, &kGear, &haveLatestTelemetry, &initPoseMotion, &extVelControl, &jogState,
-                        &requestedControlOpMode, &logger, &cfd, now, encSignForRx](
+                        &requestedControlOpMode, &logger, &enqueueCommandFrame, now, encSignForRx](
                         uint8_t cmd, const std::vector<uint8_t> &payload) {
                 if (cmd == pmi::kCmdSetWaypointBatch) {
                     endInitPoseTemporaryVelocity(m_dxl.get(), initPoseMotion);
@@ -967,8 +1011,8 @@ void TcpServer::clientSession(int cfd)
                         std::cerr << "[PMI] trajectory plan failed\n";
                         ackMsg = "PLAN_FAIL";
                     }
-                    (void)sendTelemetryFrameNonBlock(
-                        cfd, pmi::buildServerAckFrame(pmi::kSrvAck, std::vector<uint8_t>(ackMsg.begin(), ackMsg.end())));
+                    enqueueCommandFrame(
+                        pmi::buildServerAckFrame(pmi::kSrvAck, std::vector<uint8_t>(ackMsg.begin(), ackMsg.end())));
                     return;
                 }
                 if (cmd == pmi::kCmdStartTrajectoryIk) {
@@ -1088,27 +1132,27 @@ void TcpServer::clientSession(int cfd)
                     if (!parseLogStartPayload(payload, durationSec)) {
                         std::cerr << "[PMI] invalid log start payload\n";
                         const std::string msg = "LOG_START_FAIL:invalid payload";
-                        (void)sendTelemetryFrameNonBlock(cfd, pmi::buildServerAckFrame(
-                                                              pmi::kSrvAck, std::vector<uint8_t>(msg.begin(), msg.end())));
+                        enqueueCommandFrame(pmi::buildServerAckFrame(
+                            pmi::kSrvAck, std::vector<uint8_t>(msg.begin(), msg.end())));
                         return;
                     }
                     if (!logger.start(durationSec)) {
                         std::cerr << "[PMI] failed to start logger\n";
                         const std::string msg = "LOG_START_FAIL:start failed";
-                        (void)sendTelemetryFrameNonBlock(cfd, pmi::buildServerAckFrame(
-                                                              pmi::kSrvAck, std::vector<uint8_t>(msg.begin(), msg.end())));
+                        enqueueCommandFrame(pmi::buildServerAckFrame(
+                            pmi::kSrvAck, std::vector<uint8_t>(msg.begin(), msg.end())));
                     } else {
                         const std::string msg = std::string("LOG_START_OK:") + logger.currentLogPath();
-                        (void)sendTelemetryFrameNonBlock(cfd, pmi::buildServerAckFrame(
-                                                              pmi::kSrvAck, std::vector<uint8_t>(msg.begin(), msg.end())));
+                        enqueueCommandFrame(pmi::buildServerAckFrame(
+                            pmi::kSrvAck, std::vector<uint8_t>(msg.begin(), msg.end())));
                     }
                     return;
                 }
                 if (cmd == pmi::kCmdLogStop) {
                     logger.stop();
                     const std::string msg = std::string("LOG_STOP_OK:") + logger.currentLogPath();
-                    (void)sendTelemetryFrameNonBlock(
-                        cfd, pmi::buildServerAckFrame(pmi::kSrvAck, std::vector<uint8_t>(msg.begin(), msg.end())));
+                    enqueueCommandFrame(
+                        pmi::buildServerAckFrame(pmi::kSrvAck, std::vector<uint8_t>(msg.begin(), msg.end())));
                     return;
                 }
                 if (cmd == pmi::kCmdModeVelocity) {
@@ -1175,12 +1219,97 @@ void TcpServer::clientSession(int cfd)
                     m_dxl->handlePmiClientCommand(cmd);
             });
         }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
 client_done:
+    running.store(false);
+    if (netThread.joinable())
+        netThread.join();
     endInitPoseTemporaryVelocity(m_dxl.get(), initPoseMotion);
     stopJogRestoreHardware(jogState, m_dxl.get());
     std::cerr << "[PMI] client disconnected: " << peer << std::endl;
+    {
+        std::lock_guard<std::mutex> lock(m_clientMutex);
+        if (m_activeCommandClientFd == cfd)
+            m_activeCommandClientFd = -1;
+    }
+    ::shutdown(cfd, SHUT_RDWR);
+    ::close(cfd);
+}
+
+void TcpServer::telemetrySession(int cfd)
+{
+    setNoDelay(cfd);
+    (void)setNonBlock(cfd);
+
+    const std::string peer = formatPeer(cfd);
+    std::cerr << "[PMI] telemetry client connected: " << peer << std::endl;
+
+    using clock = std::chrono::steady_clock;
+    constexpr auto kTelemetryPeriod = std::chrono::milliseconds(100);
+    auto nextTx = clock::now();
+
+    while (!m_stop.load()) {
+        const auto now = clock::now();
+        if (now >= nextTx) {
+            nextTx = now + kTelemetryPeriod;
+
+            pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount]{};
+            bool haveLatest = false;
+            {
+                std::lock_guard<std::mutex> lock(m_latestMutex);
+                haveLatest = m_haveLatestTelemetry;
+                if (haveLatest) {
+                    for (size_t i = 0; i < pmi::kTelemetryAxisCount; ++i)
+                        axes[i] = m_latestAxes[i];
+                }
+            }
+            if (haveLatest) {
+                const std::vector<uint8_t> frame = pmi::buildServerFrame(axes);
+                if (!frame.empty() && !sendTelemetryFrameNonBlock(cfd, frame))
+                    break;
+            }
+        }
+
+        pollfd pfd{};
+        pfd.fd = cfd;
+        pfd.events = POLLIN;
+        const int pr = ::poll(&pfd, 1, 5);
+        if (pr < 0) {
+            if (errno == EINTR)
+                continue;
+            break;
+        }
+        if (pr > 0 && (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)))
+            break;
+
+        // Port 9000 is telemetry-only. Drain and ignore unexpected inbound bytes.
+        if (pr > 0 && (pfd.revents & POLLIN)) {
+            char dropBuf[1024];
+            while (true) {
+                const ssize_t n = ::recv(cfd, dropBuf, sizeof(dropBuf), MSG_DONTWAIT);
+                if (n > 0)
+                    continue;
+                if (n == 0)
+                    goto telemetry_done;
+                if (errno == EAGAIN || errno == EWOULDBLOCK)
+                    break;
+                if (errno == EINTR)
+                    continue;
+                goto telemetry_done;
+            }
+        }
+    }
+
+telemetry_done:
+    std::cerr << "[PMI] telemetry client disconnected: " << peer << std::endl;
+    {
+        std::lock_guard<std::mutex> lock(m_clientMutex);
+        if (m_activeTelemetryClientFd == cfd)
+            m_activeTelemetryClientFd = -1;
+    }
     ::shutdown(cfd, SHUT_RDWR);
     ::close(cfd);
 }
@@ -1192,60 +1321,119 @@ TcpServer::~TcpServer()
     stop();
 }
 
-bool TcpServer::start(uint16_t port)
+bool TcpServer::start(uint16_t telemetryPort, uint16_t commandPort)
 {
     stop();
 
-    const int fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (fd < 0)
+    const int telemetryFd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (telemetryFd < 0)
         return false;
+    const int commandFd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (commandFd < 0) {
+        ::close(telemetryFd);
+        return false;
+    }
 
     int reuse = 1;
-    (void)::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    (void)::setsockopt(telemetryFd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    (void)::setsockopt(commandFd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
 
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    sockaddr_in telemetryAddr{};
+    telemetryAddr.sin_family = AF_INET;
+    telemetryAddr.sin_port = htons(telemetryPort);
+    telemetryAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    sockaddr_in commandAddr{};
+    commandAddr.sin_family = AF_INET;
+    commandAddr.sin_port = htons(commandPort);
+    commandAddr.sin_addr.s_addr = htonl(INADDR_ANY);
 
-    if (::bind(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) != 0) {
-        ::close(fd);
+    if (::bind(telemetryFd, reinterpret_cast<sockaddr *>(&telemetryAddr), sizeof(telemetryAddr)) != 0) {
+        ::close(telemetryFd);
+        ::close(commandFd);
         return false;
     }
-    if (::listen(fd, 8) != 0) {
-        ::close(fd);
+    if (::bind(commandFd, reinterpret_cast<sockaddr *>(&commandAddr), sizeof(commandAddr)) != 0) {
+        ::close(telemetryFd);
+        ::close(commandFd);
+        return false;
+    }
+    if (::listen(telemetryFd, 8) != 0 || ::listen(commandFd, 8) != 0) {
+        ::close(telemetryFd);
+        ::close(commandFd);
         return false;
     }
 
-    m_listenFd = fd;
+    m_telemetryListenFd = telemetryFd;
+    m_commandListenFd = commandFd;
     m_stop.store(false);
-    m_thread = std::thread([this, port]() { acceptLoop(port); });
-    (void)port;
+    m_telemetryAcceptThread = std::thread([this]() { acceptLoop(m_telemetryListenFd, true); });
+    m_commandAcceptThread = std::thread([this]() { acceptLoop(m_commandListenFd, false); });
     return true;
 }
 
 void TcpServer::stop()
 {
     m_stop.store(true);
-    if (m_listenFd >= 0) {
-        ::shutdown(m_listenFd, SHUT_RDWR);
-        ::close(m_listenFd);
-        m_listenFd = -1;
+    int activeTelemetryFd = -1;
+    int activeCommandFd = -1;
+    {
+        std::lock_guard<std::mutex> lock(m_clientMutex);
+        activeTelemetryFd = m_activeTelemetryClientFd;
+        activeCommandFd = m_activeCommandClientFd;
+        m_activeTelemetryClientFd = -1;
+        m_activeCommandClientFd = -1;
     }
-    if (m_thread.joinable())
-        m_thread.join();
+    if (activeTelemetryFd >= 0) {
+        ::shutdown(activeTelemetryFd, SHUT_RDWR);
+        ::close(activeTelemetryFd);
+    }
+    if (activeCommandFd >= 0) {
+        ::shutdown(activeCommandFd, SHUT_RDWR);
+        ::close(activeCommandFd);
+    }
+    if (m_telemetryListenFd >= 0) {
+        ::shutdown(m_telemetryListenFd, SHUT_RDWR);
+        ::close(m_telemetryListenFd);
+        m_telemetryListenFd = -1;
+    }
+    if (m_commandListenFd >= 0) {
+        ::shutdown(m_commandListenFd, SHUT_RDWR);
+        ::close(m_commandListenFd);
+        m_commandListenFd = -1;
+    }
+    if (m_telemetryAcceptThread.joinable())
+        m_telemetryAcceptThread.join();
+    if (m_commandAcceptThread.joinable())
+        m_commandAcceptThread.join();
 }
 
-void TcpServer::acceptLoop(uint16_t port)
+void TcpServer::acceptLoop(int listenFd, bool telemetryOnly)
 {
-    (void)port;
     while (!m_stop.load()) {
-        const int cfd = ::accept(m_listenFd, nullptr, nullptr);
+        const int cfd = ::accept(listenFd, nullptr, nullptr);
         if (cfd < 0) {
             if (errno == EINTR)
                 continue;
             break;
         }
-        std::thread([this, cfd]() { clientSession(cfd); }).detach();
+        int oldFd = -1;
+        {
+            std::lock_guard<std::mutex> lock(m_clientMutex);
+            if (telemetryOnly) {
+                oldFd = m_activeTelemetryClientFd;
+                m_activeTelemetryClientFd = cfd;
+            } else {
+                oldFd = m_activeCommandClientFd;
+                m_activeCommandClientFd = cfd;
+            }
+        }
+        if (oldFd >= 0 && oldFd != cfd) {
+            ::shutdown(oldFd, SHUT_RDWR);
+            ::close(oldFd);
+        }
+        if (telemetryOnly)
+            std::thread([this, cfd]() { telemetrySession(cfd); }).detach();
+        else
+            std::thread([this, cfd]() { commandSession(cfd); }).detach();
     }
 }

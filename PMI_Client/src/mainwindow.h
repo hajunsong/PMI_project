@@ -60,7 +60,9 @@ private slots:
 private:
     void setUiConnected(bool connected);
     void sendClientCmd(uint8_t cmd);
-    void onNetBytesFromWorker(std::vector<uint8_t> chunk);
+    void onTelemetryBytesFromWorker(std::vector<uint8_t> chunk);
+    void onCommandBytesFromWorker(std::vector<uint8_t> chunk);
+    void updateConnectionUiState();
     void setupTelemetryTable();
     void updateTelemetryTable(const pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount]);
     void clearTelemetryTable();
@@ -74,9 +76,13 @@ private:
     bool sendJogVelocityCommand(double signedJointVelDegPerSec, QString *errorOut = nullptr);
 
     std::unique_ptr<Ui::MainWindow> ui;
-    std::unique_ptr<TcpClient> m_net;
+    std::unique_ptr<TcpClient> m_cmdNet;
+    std::unique_ptr<TcpClient> m_telemetryNet;
     QStandardItemModel *m_telemetryModel = nullptr;
-    std::vector<uint8_t> m_protocolRx;
+    std::vector<uint8_t> m_telemetryRx;
+    std::vector<uint8_t> m_commandRx;
+    bool m_cmdConnected = false;
+    bool m_telemetryConnected = false;
     bool m_servoOn = false;
     bool m_waypointSent = false;
     QTimer *m_logCountdownTimer = nullptr;
