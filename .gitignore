@@ -142,6 +142,10 @@ rl_pmi/*.zip
 # PMI Server runtime logs & calibration data (machine-specific, not version-controlled)
 PMI_Server/pmi_server_log_*.csv
 PMI_Server/pmi_zero_offsets.txt
+PMI_Server/amt21_rs485/cpp/amt21_linux_test
+
+# dxl_test local build outputs
+dxl_test/build/
 
 # analysis/cpp 플롯 이미지 (생성물)
 analysis/cpp/plots/

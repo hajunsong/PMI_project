@@ -292,4 +292,4 @@ int main()
     return 0;
 }
 
-// g++ -std=c++17 -O2 -Wall amt21_linux_test.cpp -o amt21_linux_test
+// g++ -std=c++17 -O2 -Wall amt21_linux_test.cpp -o amt21_linux_test && ./amt21_linux_test
