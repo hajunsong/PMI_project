@@ -159,3 +159,4 @@ pmi_hybrid_arm_mujoco/**/__pycache__/
 pmi_hybrid_arm_mujoco/**/*.py[cod]
 pmi_hybrid_arm_mujoco/debug_outputs/cable_layer/
 pmi_hybrid_arm_mujoco/debug_outputs/task_space_demo/
+pmi_hybrid_arm_mujoco/debug_outputs/task_space_comparison/

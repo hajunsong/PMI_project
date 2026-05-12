@@ -87,6 +87,33 @@ DEFAULT_DP_XYZ = np.array([12.0, 12.0, 8.0], dtype=np.float64)
 DEFAULT_KP_RP = np.array([20.0, 20.0], dtype=np.float64)
 DEFAULT_DP_RP = np.array([2.0, 2.0], dtype=np.float64)
 
+# ---------------------------------------------------------------------------
+# 동영상(MP4) 렌더 카메라 — ``--save-video`` 일 때만 Renderer에 사용.
+# MuJoCo FREE 카메라: azimuth·elevation [deg], distance = lookat–카메라 거리(줌).
+# VIDEO_CAM_USE_MUJOCO_DEFAULT True면 아래 값은 무시하고 기본 프리 카메라만 사용.
+# ---------------------------------------------------------------------------
+VIDEO_CAM_USE_MUJOCO_DEFAULT = False
+VIDEO_CAM_DISTANCE = 1.5
+VIDEO_CAM_AZIMUTH = 135.0
+VIDEO_CAM_ELEVATION = -25.0
+# 월드 좌표의 바라보는 점 [x,y,z]. None 이면 mjv_defaultFreeCamera 가 준 lookat 유지.
+VIDEO_CAM_LOOKAT: np.ndarray | None = None
+
+
+def scene_camera_for_mp4(model: mj.MjModel) -> int | mj.MjvCamera:
+    """오프스크린 ``Renderer.update_scene(..., camera=...)`` 용 설정."""
+    if VIDEO_CAM_USE_MUJOCO_DEFAULT:
+        return -1
+    cam = mj.MjvCamera()
+    cam.type = mj.mjtCamera.mjCAMERA_FREE
+    mj.mjv_defaultFreeCamera(model, cam)
+    cam.distance = float(VIDEO_CAM_DISTANCE)
+    cam.azimuth = float(VIDEO_CAM_AZIMUTH)
+    cam.elevation = float(VIDEO_CAM_ELEVATION)
+    if VIDEO_CAM_LOOKAT is not None:
+        cam.lookat[:] = np.asarray(VIDEO_CAM_LOOKAT, dtype=np.float64).reshape(3)
+    return cam
+
 
 def np3(scalar: float) -> np.ndarray:
     return np.array([float(scalar)] * 3, dtype=np.float64)
@@ -251,7 +278,7 @@ def run_rollout(
     dataset_label: str,
     collect_frames_every: int,
     renderer: mj.Renderer | None,
-    camera_id: int,
+    scene_camera: int | mj.MjvCamera,
     sim_data: mj.MjData | None = None,
     viewer: Any | None = None,
     viewer_realtime_scale: float = 1.0,
@@ -349,7 +376,7 @@ def run_rollout(
 
         if capture and (step_i % render_stride == 0):
             assert renderer is not None
-            renderer.update_scene(data, camera=camera_id)
+            renderer.update_scene(data, camera=scene_camera)
             frames.append(np.asarray(renderer.render(), dtype=np.uint8))
 
         if cr is not None:
@@ -896,12 +923,13 @@ def main() -> None:
     fps_vid = float(1.0 / (dt_sim * stride))
 
     save_video_flag = args.save_video
-    cam_id = -1
 
     hybrid_cable = HybridTransmission(cable=demo_cable)
     renderer: mj.Renderer | None = None
     if save_video_flag:
         renderer = mj.Renderer(model, width=640, height=480)
+
+    mp4_cam: int | mj.MjvCamera = scene_camera_for_mp4(model) if save_video_flag else -1
 
     data_shared: mj.MjData | None = mj.MjData(model) if args.viewer else None
     vw_scale = float(args.viewer_realtime_scale)
@@ -921,7 +949,7 @@ def main() -> None:
             dataset_label="cable",
             collect_frames_every=stride if save_video_flag and renderer is not None else 0,
             renderer=renderer,
-            camera_id=cam_id,
+            scene_camera=mp4_cam,
             sim_data=data_shared,
             viewer=viewer_h,
             viewer_realtime_scale=vw_scale,
@@ -996,7 +1024,7 @@ def main() -> None:
             dataset_label="ideal_identity",
             collect_frames_every=0,
             renderer=None,
-            camera_id=cam_id,
+            scene_camera=-1,
             sim_data=None,
             viewer=None,
         )
