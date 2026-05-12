@@ -1,0 +1,96 @@
+initial_actuator_rad:
+  - 1.265218339
+  - 8.499798667
+  - 4.720384333
+  - -1.5016941
+
+waypoints:
+  - { t: 0.0, x:  0.25, y: -0.20, z: -0.10 }
+  - { t: 0.5, x:  0.00, y: -0.35, z: -0.15 }
+  - { t: 1.0, x: -0.25, y: -0.20, z: -0.10 }
+  - { t: 1.5, x:  0.00, y: -0.35, z: -0.15 }
+  - { t: 2.0, x:  0.25, y: -0.20, z: -0.10 }
+
+orientation:
+  # initial_pose: IK roll/pitch = q_init(초기 관절 FK) 값으로 유지 · fixed 시 아래 roll/pitch 숫자 사용
+  roll_pitch_reference: initial_pose
+  roll: -1.57079632679
+  pitch: 0.0
+  yaw_mode: free
+
+interpolation:
+  type: quintic
+  waypoint_velocity: zero
+  waypoint_acceleration: zero
+
+ik:
+  # 국소해(오일러 기반 잔차의 가짜 최소점) 회피: 기하 잔차 노름이 임계값 초과일 때만 무작위 재시작
+  multistart_random_trials: 10
+  multistart_if_geom_above: 0.05
+  controlled_task:
+    x: true
+    y: true
+    z: true
+    roll: true
+    pitch: true
+    yaw: false
+  weights:
+    position: [1.0, 1.0, 1.0]
+    roll: 0.5
+    pitch: 0.5
+  damping: 1.0e-4
+  regularization: 1.0e-5
+  max_iterations: 100
+  tolerance: 1.0e-6
+
+transmission:
+  jnt1:
+    actuator: q1_act
+    ratio: 0.5333
+    type: belt
+  jnt2:
+    actuator: q2_act
+    ratio: 0.15
+    type: cable_placeholder
+  jnt3:
+    actuator: q3_act
+    ratio: 0.3
+    type: cable_placeholder
+  jnt4:
+    actuator: q4_act
+    ratio: 0.3
+    type: cable_placeholder
+
+phaseA_position_control:
+  enabled: true
+  # kinematic — IK의 q_act_des를 dof에 즉시 씀(+이상 전달 후 mj_forward만). Phase B 토크는 servo와 다름을 유의.
+  # servo    — mj_step + MuJoCo position actuator(실제 플랜트·토크 한계 미스매치 시 추종 불량 가능).
+  actuator_command_mode: kinematic
+  actuator_position_kp: [100, 100, 100, 100]
+  actuator_position_kd: [5, 5, 5, 5]
+
+phaseB_vsd:
+  enabled: true
+  # 베이스라인/디버그용: IK로 얻은 q_des 궤적 + 관절공간 VSD. 목표 추종 컨트롤러는
+  # configs/task_space_vsd.yaml + scripts/test_phaseB_task_space_vsd_tracking.py 참고.
+  Kp_joint: [20, 20, 15, 10]
+  Kd_joint: [2, 2, 1.5, 1]
+  tau_jnt_limit: [10, 10, 10, 10]
+  torque_application_mode: joint_direct_debug
+  qdot_smooth_iterations: 0
+
+simulation:
+  rng_seed: 0
+  dt: 0.001
+  duration: 2.0
+  # 이 시간(초) 이하인 모든 시각 t에서는 IK를 쓰지 않고 initial_actuator_rad→관절 자세만 유지(0이면 첫 스텝부터 IK).
+  hold_initial_pose_sec: 0
+  render: false
+  # true면 MuJoCo Passive Viewer로 스텝마다 상태 갱신(창 닫으면 해당 시점에서 재생 종료)
+  passive_viewer: true
+  # passive_viewer 일 때: 카트 경로(노란 선) / 스텝 목표(빨간 구) / 스텝 EE(녹색 구)
+  show_ik_path_overlay: true
+  ik_path_overlay_samples: 128
+  # 실시간에 가깝게: 각 스텝 후 sleep 초 ≈ dt/scale · 0 또는 음수면 sleep 안 함
+  viewer_realtime_scale: 1.0
+  save_plots: true

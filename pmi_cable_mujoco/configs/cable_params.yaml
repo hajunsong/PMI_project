@@ -1,0 +1,55 @@
+# Wire rope + pulleys: motor shafts q2_act..q4_act to arm joints q2_jnt..q4_jnt (URDF mimic; 3 joints).
+# MuJoCo names jnt2..jnt4 (= URDF q2_jnt..q4_jnt). Kinematic ratio: PMI_Server kGear 54/360, 108/360, 108/360.
+# Tune pulley_radius / stiffness vs experiments.
+#
+# 체감이 “안 바뀌는” 경우: 토크는 (q_des−q)를 백래시·데드존 거친 뒤의 extension 에 k,d를 곱해 나옵니다.
+# VSD 추종이 좋으면 jnt2–4 오차가 deadzone_width/2 이하로 들어가 탄성 항이 거의 0 → stiffness 만
+# 바꿔도 변화가 없을 수 있음. 확인: deadzone_width 를 일시적으로 0에 가깝게, 또는 scripts/test_cable_nonlinearity.py.
+# VSD 데모에서 전달 끔: --no-transmission (비교용).
+
+cable_joint_names: ["jnt2", "jnt3", "jnt4"]
+num_joints: 3
+
+pulley_radius: [0.02, 0.02, 0.02]
+stiffness: [120.0, 120.0, 120.0]
+damping: [2.0, 2.0, 2.0]
+
+coulomb: [0.15, 0.15, 0.15]
+viscous: [0.4, 0.4, 0.4]
+v_eps: [0.02, 0.02, 0.02]
+
+deadzone_width: [0, 0, 0]
+backlash_width: [0.004, 0.004, 0.004]
+backlash_slope: [800.0, 800.0, 800.0]
+
+bouc_wen:
+  alpha: [2.0, 2.0, 2.0]
+  A: [0.5, 0.5, 0.5]
+  beta: [0.5, 0.5, 0.5]
+  gamma: [0.5, 0.5, 0.5]
+  n: [1.0, 1.0, 1.0]
+  z_clip: [0.05, 0.05, 0.05]
+
+# 길항 케이블(jnt2–4): ``transmission/antagonistic_cable_joint.py`` + ``cable_transmission.py``
+antagonistic:
+  T_preload: 2.0
+  # 신장 백래시 슬랙 적분 속도 [m/s] (관절당; 플러스/마이너스 텐던 각각 동일 ``backlash_width`` 사용)
+  stretch_backlash_slack_rate: 40.0
+
+max_cable_force: 500.0
+max_hysteresis_force: 80.0
+
+randomization:
+  enabled: true
+  pulley_radius: [0.015, 0.025]
+  stiffness: [80.0, 180.0]
+  damping: [4.0, 14.0]
+  coulomb: [0.05, 0.35]
+  viscous: [0.2, 0.8]
+  deadzone_width: [0.0005, 0.006]
+  backlash_width: [0.001, 0.008]
+  bouc_wen_alpha: [1.0, 4.0]
+  bouc_wen_A: [0.2, 1.0]
+  bouc_wen_beta: [0.2, 1.0]
+  bouc_wen_gamma: [0.2, 1.0]
+  bouc_wen_n: [0.8, 1.2]

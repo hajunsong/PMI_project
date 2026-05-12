@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Arm kinematics / STL: ros_ws/pmi_description3/urdf/pmi_description3.urdf.
+     관성·캡슐 근사: 기존 pmi_description2 / PMI_Server 값 유지.
+     base_link ``euler Z=π``: URDF base 와 비교 시 XY 반전과 동일.
+     Transmission layout (torque 모델 pmi_cable_arm.xml 과 동일):
+       • q1_act ↔ jnt1 : 타이밍 벨트 + 기어 (mult=32/60). 비선형: belt_model.py.
+       • q2–4_act ↔ jnt2–4 : 케이블 + 도르레 (mult 54/360, 108/360, 108/360). 강체 비는 <equality>; 케이블 보정은 cable_model.py.
+     Joint limits: jnt1 ∈ [-π,π], jnt2–4 ∈ [-π/2,π/2]. Actuator shafts q*_act: range = joint_limit / mult.
+     Variant: ``position`` 액추에이터는 등식으로 맞물린 구동축 ``q*_act`` 에만 건다 (ctrl = 목표 구동축 각 [rad]).
+     관절 목표 ``q_jnt`` 는 스크립트에서 ``q_act = q_jnt / gear`` 로 변환해 ``data.ctrl`` 에 넣는다.
+     MuJoCo arm joints jnt1..jnt4 correspond to URDF q1_jnt..q4_jnt. -->
+<mujoco model="pmi_cable_arm_position">
+  <compiler angle="radian" eulerseq="xyz" autolimits="true" meshdir="../../ros_ws/pmi_description3/meshes"/>
+
+  <!-- 접촉 끔: 캡슐 근접 배치로 인한 자기/바닥 관통이 서보·등식을 망가뜨리는 것을 피함 (경로 데모용). -->
+  <option timestep="0.001" gravity="0 0 -9.81" integrator="RK4" iterations="80" tolerance="1e-10">
+    <flag contact="disable"/>
+  </option>
+
+  <visual>
+    <headlight diffuse="0.8 0.8 0.8" ambient="0.3 0.3 0.3"/>
+    <global azimuth="140" elevation="-20"/>
+  </visual>
+
+  <asset>
+    <texture name="grid" type="2d" builtin="checker" width="512" height="512" rgb1=".1 .2 .3" rgb2=".2 .3 .4"/>
+    <material name="grid" texture="grid" texrepeat="8 8" reflectance="0.2"/>
+    <material name="link_vis" rgba="0.65 0.68 0.78 1"/>
+    <material name="base_vis" rgba="0.79 0.82 0.93 1"/>
+    <material name="act_vis" rgba="0.25 0.72 0.38 1"/>
+    <mesh name="base_link_mesh" file="base_link.STL"/>
+    <mesh name="link1_mesh" file="link1.STL"/>
+    <mesh name="link2_mesh" file="link2.STL"/>
+    <mesh name="link3_mesh" file="link3.STL"/>
+    <mesh name="link4_mesh" file="link4.STL"/>
+    <mesh name="q1_motor_mesh" file="q1_motor.STL"/>
+    <mesh name="q2_motor_mesh" file="q2_motor.STL"/>
+    <mesh name="q3_motor_mesh" file="q3_motor.STL"/>
+    <mesh name="q4_motor_mesh" file="q4_motor.STL"/>
+  </asset>
+
+  <default>
+    <joint damping="0.15" armature="0.02" frictionloss="0.02" limited="true"/>
+    <geom type="capsule" condim="3" friction="1 0.005 0.0001" margin="0.001"/>
+    <motor ctrllimited="true" ctrlrange="-35 35"/>
+    <!-- Passive actuator shafts (not torque-actuated in env) -->
+    <default class="act_shaft">
+      <joint damping="0.03" armature="0.002" frictionloss="0.01" limited="true"/>
+      <geom type="capsule" group="3" rgba="0 0 0 0"/>
+    </default>
+  </default>
+
+  <worldbody>
+    <light pos="0 0 3" dir="0 0 -1" diffuse="0.8 0.8 0.8" specular="0.3 0.3 0.3"/>
+    <camera name="fixed" pos="1.5 -1.5 0.8" xyaxes="0.71 0.71 -0.71 0.71 0 0.45"/>
+
+    <!-- Grid height: edit the z value in pos="0 0 z". -->
+
+    <body name="base_link" pos="0 0 0.02" euler="0 0 3.1416">
+      <inertial pos="0.00094692 -0.024204 0.07333" mass="2.1494"
+        fullinertia="0.011337 0.022966 0.01236 -1.3746e-06 -1.6639e-06 -5.9757e-05"/>
+      <geom name="base_geom" type="box" size="0.15 0.15 0.06" pos="0 0 0.07" group="3" rgba="0 0 0 0"/>
+      <geom name="base_link_cad" type="mesh" mesh="base_link_mesh" material="base_vis" contype="0" conaffinity="0" group="2"/>
+
+      <!-- Arm chain URDF q1_jnt..q4_jnt (MuJoCo names jnt1..jnt4) -->
+      <body name="link1" pos="0 0 0" euler="3.14159265 0 0">
+        <joint name="jnt1" type="hinge" axis="0 0 1" range="-3.141592653589793 3.141592653589793" actuatorfrcrange="-35 35"/>
+        <inertial pos="0.0026336 -1.68446e-05 -0.111117" mass="10.0123496865811"
+          fullinertia="0.0829601614566715 0.0391199810914461 0.0649458588226152 -0.000328089653994623 -0.000119428008908532 0.00000209012210735718"/>
+        <geom name="link1_geom" type="capsule" fromto="0 0 0 0 0 -0.12" size="0.055" group="3" rgba="0 0 0 0"/>
+        <geom name="link1_cad" type="mesh" mesh="link1_mesh" material="link_vis" contype="0" conaffinity="0" group="2"/>
+
+        <body name="link2" pos="0 0 -0.22" euler="1.57079633 0 0">
+          <joint name="jnt2" type="hinge" axis="0 0 -1" range="-1.5707963267948966 1.5707963267948966" actuatorfrcrange="-35 35"/>
+          <inertial pos="6.90559e-05 -0.0851548 -0.00686211" mass="10.4391437674567"
+            fullinertia="0.0780970193464117 0.0255871855807303 0.0745746466344453 0.0000353131298101708 -8.81620777833472e-06 0.00547282289489732"/>
+          <geom name="link2_geom" type="capsule" fromto="0 0 0 0 -0.14 0" size="0.052" group="3" rgba="0 0 0 0"/>
+          <geom name="link2_cad" type="mesh" mesh="link2_mesh" material="link_vis" contype="0" conaffinity="0" group="2"/>
+
+          <body name="link3" pos="0 -0.23 0" euler="0 0 -1.57079633">
+            <joint name="jnt3" type="hinge" axis="0 0 -1" range="-1.5707963267948966 1.5707963267948966" actuatorfrcrange="-35 35"/>
+            <inertial pos="0.0969069 -3.20036e-05 -0.00548574" mass="10.3406497234359"
+              fullinertia="0.0792872354716476 0.0227404242493157 0.0781409250910383 8.26042768438978e-06 5.43833216931251e-06 0.00431986606376804"/>
+            <geom name="link3_geom" type="capsule" fromto="0 0 0 0.14 0 0" size="0.048" group="3" rgba="0 0 0 0"/>
+            <geom name="link3_cad" type="mesh" mesh="link3_mesh" material="link_vis" contype="0" conaffinity="0" group="2"/>
+
+            <body name="link4" pos="0.23 0 0" euler="-3.14159265 0 0">
+              <joint name="jnt4" type="hinge" axis="0 0 -1" range="-1.5707963267948966 1.5707963267948966" actuatorfrcrange="-35 35"/>
+              <inertial pos="0.0675884 0.00443192 0.000679202" mass="7.01416597186014"
+                fullinertia="0.0393493190184971 0.0111764686166838 0.0410218257620852 -0.000926169916890393 -8.43406506016272e-06 0.000204330936352529"/>
+              <geom name="link4_geom" type="capsule" fromto="0 0 0 0.10 0 0" size="0.04" group="3" rgba="0 0 0 0"/>
+              <geom name="link4_cad" type="mesh" mesh="link4_mesh" material="link_vis" contype="0" conaffinity="0" group="2"/>
+              <site name="ee" pos="0.18 0 0" size="0.02" rgba="1 0 0 0.5"/>
+            </body>
+          </body>
+        </body>
+      </body>
+
+      <!-- Actuator branches URDF q*_act + link01..link04 -->
+      <body name="link01" pos="0 -0.14 0" euler="-3.14159265 0 1.57079633" childclass="act_shaft">
+        <joint name="q1_act" type="hinge" axis="0 0 1" range="-5.890486225480862 5.890486225480862"/>
+        <inertial pos="0 0 -0.0061604" mass="0.031263"
+          fullinertia="5.9458e-06 5.9458e-06 7.8696e-06 -3.8921e-14 -3.2055e-22 2.9435e-22"/>
+        <geom name="link01_geom" type="capsule" fromto="0 0 0 0 0 -0.04" size="0.028"/>
+        <geom name="link01_cad" type="mesh" mesh="q1_motor_mesh" material="act_vis" contype="0" conaffinity="0" group="2"/>
+      </body>
+
+      <body name="link02" pos="0 -0.25 0" euler="-3.14159265 0 1.57079633" childclass="act_shaft">
+        <joint name="q2_act" type="hinge" axis="0 0 1" range="-10.471975511965978 10.471975511965978"/>
+        <inertial pos="6.5945e-07 9.3491e-07 0.01996" mass="0.10842"
+          fullinertia="2.8381e-05 2.8462e-05 4.6591e-05 1.7708e-08 3.5646e-09 8.7331e-10"/>
+        <geom name="link02_geom" type="capsule" fromto="0 0 0 0 0 0.05" size="0.035"/>
+        <geom name="link02_cad" type="mesh" mesh="q2_motor_mesh" material="act_vis" contype="0" conaffinity="0" group="2"/>
+      </body>
+
+      <body name="link03" pos="0.075 -0.25 0" euler="3.14159265 0 1.57079633" childclass="act_shaft">
+        <joint name="q3_act" type="hinge" axis="0 0 1" range="-5.235987755982989 5.235987755982989"/>
+        <inertial pos="-9.2316e-07 7.2482e-07 0.01996" mass="0.10842"
+          fullinertia="2.8411e-05 2.8432e-05 4.6591e-05 -1.3701e-08 4.0204e-09 8.2403e-09"/>
+        <geom name="link03_geom" type="capsule" fromto="0 0 0 0 0 0.05" size="0.035"/>
+        <geom name="link03_cad" type="mesh" mesh="q3_motor_mesh" material="act_vis" contype="0" conaffinity="0" group="2"/>
+      </body>
+
+      <body name="link04" pos="-0.075 -0.25 0" euler="3.14159265 0 1.57079633" childclass="act_shaft">
+        <joint name="q4_act" type="hinge" axis="0 0 1" range="-5.235987755982989 5.235987755982989"/>
+        <inertial pos="-9.2316e-07 7.2482e-07 0.01996" mass="0.10842"
+          fullinertia="2.8411e-05 2.8432e-05 4.6591e-05 -1.3701e-08 4.0204e-09 8.2403e-09"/>
+        <geom name="link04_geom" type="capsule" fromto="0 0 0 0 0 0.05" size="0.035"/>
+        <geom name="link04_cad" type="mesh" mesh="q4_motor_mesh" material="act_vis" contype="0" conaffinity="0" group="2"/>
+      </body>
+    </body>
+  </worldbody>
+
+  <!-- q1: belt/gear; q2–4: cable+pulley — rigid coupling q*_jnt = mult * q*_act (polycoef a1 = mult) -->
+  <equality>
+    <joint joint1="jnt1" joint2="q1_act" polycoef="0 0.5333333333333333 0 0 0" solref="0.002 1" solimp="0.99 0.999 0.0005"/>
+    <joint joint1="jnt2" joint2="q2_act" polycoef="0 0.15 0 0 0" solref="0.002 1" solimp="0.99 0.999 0.0005"/>
+    <joint joint1="jnt3" joint2="q3_act" polycoef="0 0.3 0 0 0" solref="0.002 1" solimp="0.99 0.999 0.0005"/>
+    <joint joint1="jnt4" joint2="q4_act" polycoef="0 0.3 0 0 0" solref="0.002 1" solimp="0.99 0.999 0.0005"/>
+  </equality>
+
+  <!-- 구동축 서보 (belt/cable 등식과 일관). ctrlrange = 해당 q_act 관절 한계 (MJCF 상단 주석과 동일). -->
+  <actuator>
+    <position name="pos_q1_act" joint="q1_act" kp="180" kv="18" ctrllimited="true"
+      ctrlrange="-5.890486225480862 5.890486225480862" forcerange="-200 200"/>
+    <position name="pos_q2_act" joint="q2_act" kp="180" kv="18" ctrllimited="true"
+      ctrlrange="-10.471975511965978 10.471975511965978" forcerange="-200 200"/>
+    <position name="pos_q3_act" joint="q3_act" kp="180" kv="18" ctrllimited="true"
+      ctrlrange="-5.235987755982989 5.235987755982989" forcerange="-200 200"/>
+    <position name="pos_q4_act" joint="q4_act" kp="180" kv="18" ctrllimited="true"
+      ctrlrange="-5.235987755982989 5.235987755982989" forcerange="-200 200"/>
+  </actuator>
+
+</mujoco>

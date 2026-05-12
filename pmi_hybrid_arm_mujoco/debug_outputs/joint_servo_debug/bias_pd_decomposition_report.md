@@ -1,0 +1,37 @@
+# Bias PD Decomposition Report
+
+- jnt1 step +0.20 bias_only: final_error=0.25740
+- jnt1 step +0.20 pd_only: final_error=0.25739
+- jnt1 step +0.20 bias_plus_pd: final_error=0.25667
+- jnt1 step +0.20 bias_minus_pd: final_error=0.25705
+- jnt1 step -0.20 bias_only: final_error=-0.14260
+- jnt1 step -0.20 pd_only: final_error=-0.14297
+- jnt1 step -0.20 bias_plus_pd: final_error=-0.14339
+- jnt1 step -0.20 bias_minus_pd: final_error=-0.14328
+- jnt2 step +0.20 bias_only: final_error=0.19997
+- jnt2 step +0.20 pd_only: final_error=-0.09603
+- jnt2 step +0.20 bias_plus_pd: final_error=0.01470
+- jnt2 step +0.20 bias_minus_pd: final_error=3.04623
+- jnt2 step -0.20 bias_only: final_error=-0.20003
+- jnt2 step -0.20 pd_only: final_error=-0.22636
+- jnt2 step -0.20 bias_plus_pd: final_error=0.00000
+- jnt2 step -0.20 bias_minus_pd: final_error=2.03601
+- jnt3 step +0.20 bias_only: final_error=0.19994
+- jnt3 step +0.20 pd_only: final_error=0.11995
+- jnt3 step +0.20 bias_plus_pd: final_error=0.04506
+- jnt3 step +0.20 bias_minus_pd: final_error=3.18717
+- jnt3 step -0.20 bias_only: final_error=-0.20006
+- jnt3 step -0.20 pd_only: final_error=-0.03902
+- jnt3 step -0.20 bias_plus_pd: final_error=0.00035
+- jnt3 step -0.20 bias_minus_pd: final_error=2.01802
+- jnt4 step +0.20 bias_only: final_error=0.20003
+- jnt4 step +0.20 pd_only: final_error=0.00959
+- jnt4 step +0.20 bias_plus_pd: final_error=0.01720
+- jnt4 step +0.20 bias_minus_pd: final_error=-1.90891
+- jnt4 step -0.20 bias_only: final_error=-0.19997
+- jnt4 step -0.20 pd_only: final_error=-0.04043
+- jnt4 step -0.20 bias_plus_pd: final_error=0.00000
+- jnt4 step -0.20 bias_minus_pd: final_error=-2.27388
+
+- Compare bias+PD vs bias-PD signs above.
+- If bias-PD is consistently better for a joint, PD sign for that joint is likely inverted.

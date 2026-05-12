@@ -1,0 +1,537 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<robot
+  name="pmi_description3">
+  <link
+    name="base_link">
+    <inertial>
+      <origin
+        xyz="-0.00094779525961415 0.0731824580632739 -0.00426459102280079"
+        rpy="0 0 0" />
+      <mass
+        value="2.14742878514911" />
+      <inertia
+        ixx="0.0113367395890069"
+        ixy="1.66394342827115E-06"
+        ixz="1.37457815703454E-06"
+        iyy="0.0123595741005711"
+        iyz="-5.97549903543962E-05"
+        izz="0.0229657250874318" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pmi_description3/meshes/base_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pmi_description3/meshes/base_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <link
+    name="link1">
+    <inertial>
+      <origin
+        xyz="0.0029766 -1.9976E-09 -0.10913"
+        rpy="0 0 0" />
+      <mass
+        value="1.1285" />
+      <inertia
+        ixx="0.0034546"
+        ixy="-4.1833E-08"
+        ixz="8.2656E-08"
+        iyy="0.0034685"
+        iyz="-2.2223E-12"
+        izz="0.0014719" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pmi_description3/meshes/link1.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.79216 0.81961 0.93333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pmi_description3/meshes/link1.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="jnt1"
+    type="revolute">
+    <origin
+      xyz="0 0 0"
+      rpy="3.1416 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="link1" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-3.1416"
+      upper="3.1416"
+      effort="10"
+      velocity="100" />
+    <mimic
+      joint="q1_act"
+      multiplier="0.5333"
+      offset="0" />
+  </joint>
+  <link
+    name="link2">
+    <inertial>
+      <origin
+        xyz="5.8908E-05 -0.083968 -0.0062912"
+        rpy="0 0 0" />
+      <mass
+        value="1.2748" />
+      <inertia
+        ixx="0.0027247"
+        ixy="2.3397E-08"
+        ixz="-1.513E-06"
+        iyy="0.0013258"
+        iyz="-2.3923E-06"
+        izz="0.0029712" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pmi_description3/meshes/link2.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.79216 0.81961 0.93333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pmi_description3/meshes/link2.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="jnt2"
+    type="revolute">
+    <origin
+      xyz="0 0 -0.22"
+      rpy="1.5708 0 0" />
+    <parent
+      link="link1" />
+    <child
+      link="link2" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="-1.5709"
+      upper="1.5709"
+      effort="10"
+      velocity="100" />
+    <mimic
+      joint="q2_act"
+      multiplier="0.15"
+      offset="0" />
+  </joint>
+  <link
+    name="link3">
+    <inertial>
+      <origin
+        xyz="0.095221 -3.7333E-05 -0.004723"
+        rpy="0 0 0" />
+      <mass
+        value="1.2621" />
+      <inertia
+        ixx="0.0010938"
+        ixy="2.3488E-08"
+        ixz="5.6708E-06"
+        iyy="0.0037848"
+        iyz="-4.7642E-08"
+        izz="0.0042272" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pmi_description3/meshes/link3.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.79216 0.81961 0.93333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pmi_description3/meshes/link3.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="jnt3"
+    type="revolute">
+    <origin
+      xyz="0 -0.23 0"
+      rpy="0 0 -1.5709" />
+    <parent
+      link="link2" />
+    <child
+      link="link3" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-1.5709"
+      upper="1.5709"
+      effort="10"
+      velocity="100" />
+    <mimic
+      joint="q3_act"
+      multiplier="0.3"
+      offset="0" />
+  </joint>
+  <link
+    name="link4">
+    <inertial>
+      <origin
+        xyz="0.068913 0.0046115 0.0014599"
+        rpy="0 0 0" />
+      <mass
+        value="0.85956" />
+      <inertia
+        ixx="0.0007259"
+        ixy="6.1552E-06"
+        ixz="3.5026E-06"
+        iyy="0.0013575"
+        iyz="3.0696E-08"
+        izz="0.001809" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pmi_description3/meshes/link4.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.79216 0.81961 0.93333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pmi_description3/meshes/link4.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="jnt4"
+    type="revolute">
+    <origin
+      xyz="0.23 0 0"
+      rpy="-3.1416 0 0" />
+    <parent
+      link="link3" />
+    <child
+      link="link4" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-1.5709"
+      upper="1.5709"
+      effort="10"
+      velocity="100" />
+    <mimic
+      joint="q4_act"
+      multiplier="0.3"
+      offset="0" />
+  </joint>
+  <link
+    name="q1_motor">
+    <inertial>
+      <origin
+        xyz="2.7756E-17 7.3141E-18 -0.0061604"
+        rpy="0 0 0" />
+      <mass
+        value="0.031263" />
+      <inertia
+        ixx="5.9458E-06"
+        ixy="-3.8921E-14"
+        ixz="-3.0989E-22"
+        iyy="5.9458E-06"
+        iyz="3.8542E-22"
+        izz="7.8696E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pmi_description3/meshes/q1_motor.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.79216 0.81961 0.93333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pmi_description3/meshes/q1_motor.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="q1_act"
+    type="revolute">
+    <origin
+      xyz="0 0.14 0"
+      rpy="-3.1416 0 -1.5708" />
+    <parent
+      link="base_link" />
+    <child
+      link="q1_motor" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-5.8909"
+      upper="5.8909"
+      effort="10"
+      velocity="100" />
+  </joint>
+  <link
+    name="q2_motor">
+    <inertial>
+      <origin
+        xyz="6.5945E-07 9.3491E-07 0.01996"
+        rpy="0 0 0" />
+      <mass
+        value="0.10842" />
+      <inertia
+        ixx="2.8381E-05"
+        ixy="1.7708E-08"
+        ixz="3.5646E-09"
+        iyy="2.8462E-05"
+        iyz="8.7331E-10"
+        izz="4.6591E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pmi_description3/meshes/q2_motor.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.79216 0.81961 0.93333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pmi_description3/meshes/q2_motor.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="q2_act"
+    type="revolute">
+    <origin
+      xyz="0 0.25 0"
+      rpy="-3.1416 0 -1.5708" />
+    <parent
+      link="base_link" />
+    <child
+      link="q2_motor" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-10.472"
+      upper="10.472"
+      effort="10"
+      velocity="100" />
+  </joint>
+  <link
+    name="q3_motor">
+    <inertial>
+      <origin
+        xyz="-9.2316E-07 7.2482E-07 0.01996"
+        rpy="0 0 0" />
+      <mass
+        value="0.10842" />
+      <inertia
+        ixx="2.8411E-05"
+        ixy="-1.3701E-08"
+        ixz="4.0204E-09"
+        iyy="2.8432E-05"
+        iyz="8.2403E-09"
+        izz="4.6591E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pmi_description3/meshes/q3_motor.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.79216 0.81961 0.93333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pmi_description3/meshes/q3_motor.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="q3_act"
+    type="revolute">
+    <origin
+      xyz="-0.075 0.25 0"
+      rpy="-3.1416 0 -1.5708" />
+    <parent
+      link="base_link" />
+    <child
+      link="q3_motor" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-5.236"
+      upper="5.236"
+      effort="10"
+      velocity="100" />
+  </joint>
+  <link
+    name="q4_motor">
+    <inertial>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <mass
+        value="0" />
+      <inertia
+        ixx="0"
+        ixy="0"
+        ixz="0"
+        iyy="0"
+        iyz="0"
+        izz="0" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pmi_description3/meshes/q4_motor.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pmi_description3/meshes/q4_motor.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="q4_act"
+    type="revolute">
+    <origin
+      xyz="0.075 0.25 0"
+      rpy="-3.1416 0 -1.5708" />
+    <parent
+      link="base_link" />
+    <child
+      link="q4_motor" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-5.236"
+      upper="5.236"
+      effort="10"
+      velocity="100" />
+  </joint>
+  <link name="end_effector"/>
+  <joint name="end_effector_joint" type="fixed">
+    <origin
+      xyz="0.18 0 0"
+      rpy="0 0 -1.5709" />
+    <parent
+      link="link4" />
+    <child
+      link="end_effector" />
+  </joint>
+</robot>

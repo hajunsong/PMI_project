@@ -1,0 +1,17 @@
+mjcf,joint,dof_index,tau_applied,qacc,sign_consistent_nonzero
+pmi_arm_only_torque_debug,jnt1,0,1.0,-110.5312367566981,False
+pmi_arm_only_torque_debug,jnt1,0,-1.0,-110.55661673693767,True
+pmi_arm_only_torque_debug,jnt2,1,1.0,12.041300213824856,True
+pmi_arm_only_torque_debug,jnt2,1,-1.0,-16.236404119096186,True
+pmi_arm_only_torque_debug,jnt3,2,1.0,73.0815947311202,True
+pmi_arm_only_torque_debug,jnt3,2,-1.0,-66.40534074312731,True
+pmi_arm_only_torque_debug,jnt4,3,1.0,205.59342530080323,True
+pmi_arm_only_torque_debug,jnt4,3,-1.0,-195.7635253083018,True
+pmi_arm_only_no_collision,jnt1,0,1.0,68.14922653606317,True
+pmi_arm_only_no_collision,jnt1,0,-1.0,-68.06133041247332,True
+pmi_arm_only_no_collision,jnt2,1,1.0,14.430324805133301,True
+pmi_arm_only_no_collision,jnt2,1,-1.0,-13.909298869460347,True
+pmi_arm_only_no_collision,jnt3,2,1.0,70.10383893269147,True
+pmi_arm_only_no_collision,jnt3,2,-1.0,-69.48525298495431,True
+pmi_arm_only_no_collision,jnt4,3,1.0,206.703805707968,True
+pmi_arm_only_no_collision,jnt4,3,-1.0,-194.6667073327786,True

@@ -264,7 +264,7 @@ static bool read_amt21_once(int fd, uint8_t node_address, int resolution_bits)
 
 int main()
 {
-    std::string port_name = "/dev/ttyU2D2";
+    std::string port_name = "/dev/ttyUSB1";
 
     // AMT21 adjustable data-rate 모델 기본값은 보통 115200 bps.
     int baudrate = 115200;

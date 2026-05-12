@@ -13,7 +13,7 @@
 namespace XM540 {
 constexpr float PROTOCOL_VERSION = 2.0f;
 constexpr int BAUDRATE = 2000000;
-constexpr const char* DEVICENAME = "/dev/ttyUSB1";
+constexpr const char* DEVICENAME = "/dev/ttyUSB0";
 
 constexpr uint8_t TORQUE_ENABLE = 1;
 constexpr uint8_t TORQUE_DISABLE = 0;

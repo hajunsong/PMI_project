@@ -149,3 +149,6 @@ dxl_test/build/
 
 # analysis/cpp 플롯 이미지 (생성물)
 analysis/cpp/plots/
+
+# 하이브리드 MuJoCo: JTF 스윕 전구간 시계열 (100MB+ → GitHub 거부, 스크립트로 재생성)
+pmi_hybrid_arm_mujoco/debug_outputs/no_collision_tracking/task_space_jtf_no_collision.csv

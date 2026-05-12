@@ -1,0 +1,24 @@
+# Virtual spring-damper baseline + RL residual scaling (per joint)
+
+lambda_residual: [0.08, 0.08, 0.08, 0.08]
+
+# Per-joint Kp [N·m/rad], Kd [N·m·s/rad]
+Kp: [55.0, 55.0, 55.0, 55.0]
+Kd: [6.0, 6.0, 6.0, 6.0]
+
+# Torque limits per joint [N·m]
+tau_saturation: [28.0, 28.0, 28.0, 28.0]
+
+# Reference trajectory (env)
+#   sine | step_hold  — joint-space ReferenceTrajectory
+#   waypoints_xyz     — EE xyz waypoints + PMI_Server-style PathPlanner (see control_params_waypoints.yaml)
+trajectory:
+  mode: sine            # sine | step_hold | waypoints_xyz
+  amplitude: [0.35, 0.25, 0.2, 0.15]
+  frequency_hz: [0.15, 0.18, 0.12, 0.2]
+  phase: [0.0, 0.5, 1.0, 1.5]
+  step_target: [0.2, -0.15, 0.1, -0.05]
+  step_switch_step: 400
+
+simulation:
+  frame_skip: 1

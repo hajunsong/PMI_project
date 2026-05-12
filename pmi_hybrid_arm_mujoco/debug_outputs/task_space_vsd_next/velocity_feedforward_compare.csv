@@ -1,0 +1,3 @@
+case,use_desired_velocity,edot_definition,rms_pos,max_pos,final_pos_err,max_tau,max_position_error_norm
+A_no_ff,False,-ydot_actual,0.29381508393237576,0.46285947446326114,0.027044367044765757,10.0,0.46285947446326114
+B_with_ff,True,ydot_des-ydot_actual,0.29373349738274,0.46256134657107545,0.02875815720656729,10.0,0.46256134657107545

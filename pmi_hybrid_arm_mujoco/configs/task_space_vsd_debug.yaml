@@ -1,0 +1,77 @@
+# 작업 공간 VSD 디버그 기본값 (과제는 xyz부터 점진 확장)
+simulation:
+  rng_seed: 0
+  dt: 0.002
+  duration: 2.0
+  hold_initial_pose_sec: 0.0
+  passive_viewer: false
+  show_ik_path_overlay: true
+  ik_path_overlay_samples: 128
+  viewer_realtime_scale: 1.0
+  save_plots: true
+  validate_contracts: false
+
+task_space_vsd:
+  task_mode: "xyz"
+
+  desired_orientation:
+    roll_pitch_reference: fixed
+    roll: -1.57079632679
+    pitch: 0.0
+    yaw_mode: free
+
+  use_bias_compensation: true
+  # false: 과제 속도항을 무시(D·dot(e) 에서 목표 속도 피드포워드 제외)
+  use_desired_velocity: true
+  torque_application_mode: joint_direct_debug
+
+  gains:
+    xyz:
+      K: [300.0, 300.0, 300.0]
+      D: [8.0, 8.0, 8.0]
+    pitch:
+      K: 1.0
+      D: 0.2
+    roll:
+      K: 1.0
+      D: 0.2
+
+  limits:
+    F_xyz: [30.0, 30.0, 30.0]
+    M_roll_pitch: [3.0, 3.0]
+    F_pitch: null
+    tau_jnt: [10.0, 10.0, 10.0, 10.0]
+    tau_act: [10.0, 10.0, 10.0, 10.0]
+
+  joint_limit:
+    enabled: true
+    margin: 0.05
+
+  jacobian:
+    mode: numerical
+    epsilon: 1.0e-6
+    flip_sign: 1
+
+path:
+  initial_actuator_rad:
+    - 1.26513926
+    - 8.49979867
+    - 4.72038433
+    - -1.50169410
+
+  waypoints:
+    - { t: 0.0, x: 0.25, y: -0.20, z: -0.10 }
+    - { t: 0.5, x: 0.00, y: -0.35, z: -0.15 }
+    - { t: 1.0, x: -0.25, y: -0.20, z: -0.10 }
+    - { t: 1.5, x: 0.00, y: -0.35, z: -0.15 }
+    - { t: 2.0, x: 0.25, y: -0.20, z: -0.10 }
+  interpolation:
+    type: quintic
+    zero_velocity_at_waypoints: true
+    zero_acceleration_at_waypoints: true
+
+transmission:
+  jnt1: { actuator: q1_act, ratio: 0.5333, type: belt }
+  jnt2: { actuator: q2_act, ratio: 0.15, type: cable_placeholder }
+  jnt3: { actuator: q3_act, ratio: 0.3, type: cable_placeholder }
+  jnt4: { actuator: q4_act, ratio: 0.3, type: cable_placeholder }

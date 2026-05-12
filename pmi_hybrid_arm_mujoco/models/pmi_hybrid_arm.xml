@@ -1,0 +1,86 @@
+<mujoco model="pmi_hybrid_arm">
+  <compiler angle="radian" meshdir="../../ros_ws/pmi_description3/meshes/"/>
+
+  <asset>
+    <mesh name="base_link" content_type="model/stl" file="base_link.STL"/>
+    <mesh name="link1" content_type="model/stl" file="link1.STL"/>
+    <mesh name="link2" content_type="model/stl" file="link2.STL"/>
+    <mesh name="link3" content_type="model/stl" file="link3.STL"/>
+    <mesh name="link4" content_type="model/stl" file="link4.STL"/>
+    <mesh name="q1_motor" content_type="model/stl" file="q1_motor.STL"/>
+    <mesh name="q2_motor" content_type="model/stl" file="q2_motor.STL"/>
+    <mesh name="q3_motor" content_type="model/stl" file="q3_motor.STL"/>
+    <mesh name="q4_motor" content_type="model/stl" file="q4_motor.STL"/>
+    <!-- 시각용 바닥 그리드(충돌 없음). 뷰어·시뮬 공통으로 표시 -->
+    <texture name="pmi_floor_grid" type="2d" builtin="checker" width="512" height="512"
+             rgb1="0.22 0.22 0.26" rgb2="0.10 0.10 0.12"/>
+    <material name="pmi_floor_grid_mat" texture="pmi_floor_grid" texrepeat="12 12"
+              specular="0" shininess="0"/>
+  </asset>
+
+  <worldbody>
+    <geom name="pmi_viz_floor_grid" type="plane" pos="0 0 -0.25" size="5 5 0.01"
+          material="pmi_floor_grid_mat" contype="0" conaffinity="0"/>
+    <geom type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="base_link"/>
+    <body name="link1" quat="-3.67321e-06 1 0 0">
+      <inertial pos="0.0029766 -1.9976e-09 -0.10913" quat="0.706042 -1.47613e-05 -1.4717e-05 0.70817" mass="1.1285" diaginertia="0.0034685 0.0034546 0.0014719"/>
+      <joint name="jnt1" pos="0 0 0" axis="0 0 1" range="-3.1416 3.1416" actuatorfrcrange="-10 10"/>
+      <geom type="mesh" rgba="0.79216 0.81961 0.93333 1" mesh="link1"/>
+      <body name="link2" pos="0 0 -0.22" quat="0.707105 0.707108 0 0">
+        <inertial pos="5.8908e-05 -0.083968 -0.0062912" quat="0.498097 0.498829 -0.501893 0.501171" mass="1.2748" diaginertia="0.00297121 0.00272469 0.0013258"/>
+        <joint name="jnt2" pos="0 0 0" axis="0 0 1" range="-1.5709 1.5709" actuatorfrcrange="-10 10"/>
+        <geom type="mesh" rgba="0.79216 0.81961 0.93333 1" mesh="link2"/>
+        <body name="link3" pos="0 -0.23 0" quat="0.70707 0 0 -0.707143">
+          <inertial pos="0.095221 -3.7333e-05 -0.004723" quat="-3.49047e-05 0.707746 -4.11681e-05 0.706467" mass="1.2621" diaginertia="0.00422721 0.0037848 0.00109379"/>
+          <joint name="jnt3" pos="0 0 0" axis="0 0 1" range="-1.5709 1.5709" actuatorfrcrange="-10 10"/>
+          <geom type="mesh" rgba="0.79216 0.81961 0.93333 1" mesh="link3"/>
+          <body name="link4" pos="0.23 0 0" quat="-3.67321e-06 -1 0 0">
+            <inertial pos="0.068913 0.0046115 0.0014599" quat="0.00349018 0.708241 -0.00339979 0.705954" mass="0.85956" diaginertia="0.00180901 0.00135756 0.000725829"/>
+            <joint name="jnt4" pos="0 0 0" axis="0 0 1" range="-1.5709 1.5709" actuatorfrcrange="-10 10"/>
+            <geom type="mesh" rgba="0.79216 0.81961 0.93333 1" mesh="link4"/>
+            <site name="end_effector" pos="0.18 0 0" quat="0.70707 0 0 -0.707143"/>
+          </body>
+        </body>
+      </body>
+    </body>
+    <body name="q1_motor" pos="0 0.14 0" quat="-2.59734e-06 -0.707105 0.707108 2.59735e-06">
+      <inertial pos="0 0 -0.0061604" quat="0.5 0.5 -0.5 0.5" mass="0.031263" diaginertia="7.8696e-06 5.9458e-06 5.9458e-06"/>
+      <joint name="q1_act" pos="0 0 0" axis="0 0 1" range="-5.8909 5.8909" actuatorfrcrange="-10 10"/>
+      <geom type="mesh" rgba="0.79216 0.81961 0.93333 1" mesh="q1_motor"/>
+    </body>
+    <body name="q2_motor" pos="0 0.25 0" quat="-2.59734e-06 -0.707105 0.707108 2.59735e-06">
+      <inertial pos="6.5945e-07 9.3491e-07 0.01996" quat="0.0727604 0.703423 -0.0727121 0.703289" mass="0.10842" diaginertia="4.6591e-05 2.84657e-05 2.83773e-05"/>
+      <joint name="q2_act" pos="0 0 0" axis="0 0 1" range="-10.472 10.472" actuatorfrcrange="-10 10"/>
+      <geom type="mesh" rgba="0.79216 0.81961 0.93333 1" mesh="q2_motor"/>
+    </body>
+    <body name="q3_motor" pos="-0.075 0.25 0" quat="-2.59734e-06 -0.707105 0.707108 2.59735e-06">
+      <inertial pos="-9.2316e-07 7.2482e-07 0.01996" quat="-0.160555 0.688718 0.160832 0.688493" mass="0.10842" diaginertia="4.6591e-05 2.84388e-05 2.84042e-05"/>
+      <joint name="q3_act" pos="0 0 0" axis="0 0 1" range="-5.236 5.236" actuatorfrcrange="-10 10"/>
+      <geom type="mesh" rgba="0.79216 0.81961 0.93333 1" mesh="q3_motor"/>
+    </body>
+    <body name="q4_motor" pos="0.075 0.25 0" quat="-2.59734e-06 -0.707105 0.707108 2.59735e-06">
+      <inertial pos="0 0 0" mass="0.031263" diaginertia="7.8696e-06 7.8696e-06 7.8696e-06"/>
+      <joint name="q4_act" pos="0 0 0" axis="0 0 1" range="-5.236 5.236" actuatorfrcrange="-10 10"/>
+      <geom type="mesh" rgba="0.79216 0.81961 0.93333 1" mesh="q4_motor"/>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <general name="pos_q1" joint="q1_act" biastype="affine" gainprm="200" biasprm="0 -200 -20"/>
+    <general name="pos_q2" joint="q2_act" biastype="affine" gainprm="200" biasprm="0 -200 -20"/>
+    <general name="pos_q3" joint="q3_act" biastype="affine" gainprm="200" biasprm="0 -200 -20"/>
+    <general name="pos_q4" joint="q4_act" biastype="affine" gainprm="200" biasprm="0 -200 -20"/>
+  </actuator>
+
+  <sensor>
+    <jointpos joint="q1_act" name="sens_q1_act"/>
+    <jointpos joint="q2_act" name="sens_q2_act"/>
+    <jointpos joint="q3_act" name="sens_q3_act"/>
+    <jointpos joint="q4_act" name="sens_q4_act"/>
+    <jointpos joint="jnt1" name="sens_jnt1"/>
+    <jointpos joint="jnt2" name="sens_jnt2"/>
+    <jointpos joint="jnt3" name="sens_jnt3"/>
+    <jointpos joint="jnt4" name="sens_jnt4"/>
+    <framepos objtype="site" objname="end_effector" name="ee_pos"/>
+  </sensor>
+</mujoco>

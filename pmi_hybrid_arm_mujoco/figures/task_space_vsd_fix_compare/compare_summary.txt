@@ -1,0 +1,5 @@
+case | task_mode | bias | rms_pos | max_pos | rms_roll | rms_pitch | max_tau | jl_steps | tau_sat_steps | final_pos_err
+case1_xyz_bias_off | xyz | False | 0.30197 | 0.46477 | 8.6842e-06 | 0.19225 | 6.3176 | 565 | 0 | 0.076662
+case2_xyz_bias_on | xyz | True | 0.29759 | 0.4605 | 7.3476e-06 | 0.35676 | 8.1492 | 0 | 0 | 0.02588
+case3_xyz_pitch_bias_on | xyz_pitch | True | 0.29996 | 0.46569 | 7.7304e-06 | 0.19522 | 7.7207 | 26 | 0 | 0.030103
+case4_xyz_rp_bias_on | xyz_roll_pitch | True | 0.29988 | 0.46569 | 7.7486e-06 | 0.19428 | 7.7065 | 26 | 0 | 0.030214

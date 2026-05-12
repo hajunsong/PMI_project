@@ -1,0 +1,60 @@
+=== RAW XML 모델 (액추에이터 포함) ===
+nq=8 nv=8 nu=4 nsensordata=11
+
+=== SIM 모델 (load_mjmodel strip_position_actuators) ===
+nq=8 nv=8 nu=0
+
+--- Joints ---
+jnt1: type=3 qposadr=0 dofadr=0 range=[-3.1416, 3.1416]
+jnt2: type=3 qposadr=1 dofadr=1 range=[-1.5709, 1.5709]
+jnt3: type=3 qposadr=2 dofadr=2 range=[-1.5709, 1.5709]
+jnt4: type=3 qposadr=3 dofadr=3 range=[-1.5709, 1.5709]
+q1_act: type=3 qposadr=4 dofadr=4 range=[-5.8909, 5.8909]
+q2_act: type=3 qposadr=5 dofadr=5 range=[-10.472, 10.472]
+q3_act: type=3 qposadr=6 dofadr=6 range=[-5.236, 5.236]
+q4_act: type=3 qposadr=7 dofadr=7 range=[-5.236, 5.236]
+
+--- Actuators (raw model only if nu>0) ---
+  [0] pos_q1: biastype=1 trnid=4 gainprm[:3]=[200.   0.   0.] biasprm[:4]=[   0. -200.  -20.    0.]
+  [1] pos_q2: biastype=1 trnid=5 gainprm[:3]=[200.   0.   0.] biasprm[:4]=[   0. -200.  -20.    0.]
+  [2] pos_q3: biastype=1 trnid=6 gainprm[:3]=[200.   0.   0.] biasprm[:4]=[   0. -200.  -20.    0.]
+  [3] pos_q4: biastype=1 trnid=7 gainprm[:3]=[200.   0.   0.] biasprm[:4]=[   0. -200.  -20.    0.]
+일반적으로 XML의 general + biastype=affine + biasprm 구조는 **위치 서보(목표 각도 ctrl)** 입니다. 토크 명령을 data.ctrl에 넣는 방식과는 물리량이 다릅니다.
+
+--- Sensors ---
+sens_q1_act: dim=1
+sens_q2_act: dim=1
+sens_q3_act: dim=1
+sens_q4_act: dim=1
+sens_jnt1: dim=1
+sens_jnt2: dim=1
+sens_jnt3: dim=1
+sens_jnt4: dim=1
+ee_pos: dim=3
+
+--- Bodies (worldbody tree names via idx) ---
+link1
+link2
+link3
+link4
+q1_motor
+q2_motor
+q3_motor
+q4_motor
+
+--- Sites ---
+end_effector
+
+--- Site end_effector id=0 ---
+site_xpos=[-4.23274286e-05 -9.03321229e-06  8.59999998e-01]
+site_xmat(flat9 first 3)=[ 1.00000000e+00 -2.87066073e-15 -7.34641996e-06]
+
+--- Index summary ---
+jnt1: joint_id=0 qposadr=0 dofadr=0
+jnt2: joint_id=1 qposadr=1 dofadr=1
+jnt3: joint_id=2 qposadr=2 dofadr=2
+jnt4: joint_id=3 qposadr=3 dofadr=3
+q1_act: joint_id=4 qposadr=4 dofadr=4
+q2_act: joint_id=5 qposadr=5 dofadr=5
+q3_act: joint_id=6 qposadr=6 dofadr=6
+q4_act: joint_id=7 qposadr=7 dofadr=7

@@ -1,0 +1,11 @@
+# PMI_Server serial configuration — KEY = VALUE, '#' starts a comment (keys case-insensitive).
+# Resolved path: PMI_SERVER build dir source tree or current working directory.
+
+dxl_serial_device = /dev/ttyUSB0
+dxl_baud = 2000000
+
+amt21_serial_device = /dev/ttyUSB1
+amt21_baud = 115200
+
+# To disable the AMT21 UART entirely, use:
+# amt21_serial_device =

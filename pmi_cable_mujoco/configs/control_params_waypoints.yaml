@@ -1,0 +1,19 @@
+# Example: EE xyz waypoints + 구동부 초기 각 [rad] — PMI_Server PathPlanner 와 동일 기구/퀸틱/IK (Python 포트).
+
+lambda_residual: [0.08, 0.08, 0.08, 0.08]
+Kp: [55.0, 55.0, 55.0, 55.0]
+Kd: [6.0, 6.0, 6.0, 6.0]
+tau_saturation: [28.0, 28.0, 28.0, 28.0]
+
+trajectory:
+  mode: waypoints_xyz
+  planner_dt: 0.001
+  # PMI_Server kGear: q_jnt = gear * q_act
+  initial_actuator_rad: [1.26513926, 8.49979867, 4.72038433, -1.50169410]
+  waypoints:
+    - { t: 0.0, x: 0.25, y: -0.2, z: -0.1 }
+    - { t: 0.5, x: 0.0, y: -0.35, z: -0.15 }
+    - { t: 1.0, x: -0.25, y: -0.2, z: -0.1 }
+
+simulation:
+  frame_skip: 1

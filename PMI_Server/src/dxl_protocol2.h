@@ -35,13 +35,24 @@ public:
     DxlBus(const DxlBus &) = delete;
     DxlBus &operator=(const DxlBus &) = delete;
 
-    bool open(const char *devicePath, int baudRate);
+    /// Opens the DYNAMIXEL bus. Optional AMT21 UART (`amt21DevicePath`): pass nullptr or "" to skip.
+    bool open(const char *devicePath, int baudRate,
+        const char *amt21DevicePath = nullptr, int amt21BaudRate = 115200);
     void close();
     bool isOpen() const;
 
     /// Broadcast GroupSyncRead of the 23-byte indirect-data block (1 transaction for all 4 motors).
     /// Requires a U2D2 or equivalent USB-RS485 adapter on /dev/ttyUSB*.
     bool syncReadTelemetry(pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount]);
+
+    /// DXL-only GroupSyncRead — no AMT21 reads; encoder_position fields are set to NaN.
+    /// Intended for the background DXL sensor thread so the control loop is never blocked.
+    bool syncReadDxlOnly(pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount]);
+
+    /// Read AMT21 absolute encoders for axes 1–3.
+    /// encDeg[0..2] correspond to axes 1/2/3; zero-offset applied when available.
+    /// Per-channel failures leave the element as NaN.  Returns true if ≥1 channel succeeded.
+    bool readAllAmt21Angles(double encDeg[3]);
 
     /// Torque / operating mode via GroupSyncWrite.
     void handlePmiClientCommand(uint8_t cmd);
@@ -59,6 +70,8 @@ private:
     bool readAmt21AngleDegUnlocked(uint8_t nodeAddress, double &angleDegOut);
     /// Lock-already-held variant used by syncReadTelemetry / captureZeroOffsetUnlocked.
     bool syncReadRawTelemetryUnlocked(pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount]);
+    /// Lock-already-held DXL-only read (no AMT21; encoder_position = NaN).
+    bool syncReadRawDxlOnlyUnlocked(pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount]);
     bool captureZeroOffsetUnlocked();
     void applyZeroOffsetUnlocked(pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount]) const;
     void loadZeroOffsetFromFileUnlocked();

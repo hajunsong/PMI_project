@@ -1,0 +1,33 @@
+# Virtual spring-damper on actuator coordinates (motor-side torque):
+# tau_act_cmd = Kp*(q_act_des - q_act) + Kd*(qdot_act_des - qdot_act)
+
+Kp:
+  q1_act: 45.0
+  q2_act: 55.0
+  q3_act: 55.0
+  q4_act: 55.0
+
+Kd:
+  q1_act: 6.0
+  q2_act: 8.0
+  q3_act: 8.0
+  q4_act: 8.0
+
+tau_max_nm:
+  q1_act: 8.0
+  q2_act: 8.0
+  q3_act: 8.0
+  q4_act: 8.0
+
+trajectory:
+  type: sinusoidal  # sinusoidal | step | constant
+  # Sinusoidal: q_act_des = amplitude * sin(2*pi*f*t + phase_rad) + offset
+  amplitude: [0.25, 0.35, 0.3, 0.28]
+  frequency_hz: [0.12, 0.15, 0.18, 0.21]
+  phase_rad: [0.0, 0.78, 1.56, 2.34]
+  offset: [0.0, 0.0, 0.0, 0.0]
+  # Step: target_rad at switch_time_sec
+  step_target_rad: [0.35, -0.3, -0.25, 0.35]
+  step_switch_sec: 0.8
+  # Constant pose (actuator radians)
+  constant_pose_rad: [0.05, -0.1, -0.12, 0.18]

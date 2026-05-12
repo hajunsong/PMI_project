@@ -1,0 +1,2 @@
+controller,rms_pos,max_pos,final_pos_err,max_tau,joint_limit_steps,torque_saturation_steps
+ik_joint_space_vsd,0.3220107906481326,0.5127638821512834,0.5125490745920956,10.0,0,487

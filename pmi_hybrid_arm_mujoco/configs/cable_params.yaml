@@ -1,0 +1,33 @@
+# Cable/antagonistic model — used only for jnt2~jnt4 (q2_act~q4_act).
+# Stretch from physical states ONLY:
+#   x = r_motor * q_act - r_joint * q_joint - x0
+# Joint torque AFTER cable:
+#   tau_joint_i = r_joint_i * T_out_i  (ideal: T_out replaces T_in with losses)
+
+use_antagonistic: true
+
+# Optional randomization ranges (fraction of nominal or absolute); see simulation.yaml toggle
+preload_tension_nominal: 1.2
+
+generic:
+  # First-order torque command delay at cable input
+  tau_delay_sec: 0.015
+  # Elastic coupling on stretch (additive tension perturbation proportional to stretch)
+  k_elastic_nominal: 8.5
+  c_viscous_stretch_nominal: 0.08
+  # Losses applied inside cable model (single-cable tension path)
+  Fc_nominal: 0.06
+  v_eps_nominal: 0.015
+  Fv_nominal: 0.02
+  # Dead-zone |x-dot| gate (magnitude of stretch-rate)
+  deadzone_xdot_nominal: 2.5e-4
+  backlash_x_nominal: 1.0e-4
+  T_clip_nominal: 80.0
+  # Bouc–Wen (hysteresis force added to tension path via hysteresis module)
+  bouc_wen:
+    alpha: 0.9
+    A: 0.25
+    beta: 180.0
+    gamma: 16.0
+    n_bw: 1.35
+    z_clip: 0.35

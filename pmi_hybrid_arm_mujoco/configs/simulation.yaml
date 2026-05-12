@@ -1,0 +1,24 @@
+timestep_sec: 0.002
+duration_sec_phase1: 5.5
+duration_sec_phase2: 6.5
+duration_sec_phase3: 7.5
+integrator: implicitfast
+solver:
+  iterations: 50
+gravity_z: -9.81
+
+render_offscreen_width: 640
+render_offscreen_height: 480
+
+phase1_tol_rad: 1.0e-3
+
+phase2_joint_limit_margin_rad: 0.05
+
+safety:
+  max_abs_accel_rad_s2_joint: 2.0e4
+  stop_on_joint_limit_hard: true
+  stop_on_torque_saturation_ratio: 0.999
+
+# Randomization (Phase 3) — NEVER applied to belt jnt1
+randomize_cable_params: false
+randomization_fraction: 0.05

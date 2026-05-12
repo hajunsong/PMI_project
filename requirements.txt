@@ -6,6 +6,7 @@
 
 mujoco>=3.1.0
 numpy>=1.20.0
+PyYAML>=6.0
 matplotlib>=3.5.0
 gymnasium>=0.29.0
 stable-baselines3>=2.2.0

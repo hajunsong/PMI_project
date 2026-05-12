@@ -478,7 +478,6 @@ void TcpServer::commandSession(int cfd)
     std::deque<std::vector<uint8_t>> pendingCommandFrames;
     uint64_t txTick = 0;
     auto lastDxlTelemetryLog = clock::time_point{};
-    auto lastDxlFailLog = clock::time_point{};
     auto lastGoalWriteFailLog = clock::time_point{};
     pmi::ServoTelemetry latestAxes[pmi::kTelemetryAxisCount]{};
     bool haveLatestTelemetry = false;
@@ -586,6 +585,119 @@ void TcpServer::commandSession(int cfd)
         }
     });
 
+    // ── Sensor snapshot ─────────────────────────────────────────────────────────
+    // The control loop reads from `sensorSnapshot` (stale OK).
+    // Two background threads keep it fresh independently of the 2 ms control period.
+    struct SensorSnapshot {
+        pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount]{};
+        bool valid = false;
+    };
+    std::mutex snapshotMutex;
+    SensorSnapshot sensorSnapshot;
+
+    // Latest AMT21 encoder angles for axes 1-3 (zero-offset applied, sign NOT yet applied).
+    std::mutex amt21SnapMutex;
+    std::array<double, 3> amt21SnapEnc{{
+        std::numeric_limits<double>::quiet_NaN(),
+        std::numeric_limits<double>::quiet_NaN(),
+        std::numeric_limits<double>::quiet_NaN()}};
+
+    std::atomic<bool> sensorRunning{true};
+
+    // Exponential backoff helper: period * 2^(fails-1), capped at maxBackoff.
+    auto sensorBackoff = [](auto period, int fails, auto maxBackoff) {
+        const int shift = std::min(fails - 1, 7);
+        return std::min(period * (1 << shift), maxBackoff);
+    };
+
+    // DXL poll thread — 5 ms nominal, backoff up to 500 ms on consecutive failures.
+    std::thread dxlPollThread([&]() {
+        constexpr auto kDxlPeriod  = std::chrono::milliseconds(5);
+        constexpr auto kMaxBackoff = std::chrono::milliseconds(500);
+        auto nextDxl = clock::now();
+        auto lastDxlFailLog = clock::time_point{};
+        int consecutiveFails = 0;
+
+        while (sensorRunning.load()) {
+            const auto now = clock::now();
+            if (now < nextDxl) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                continue;
+            }
+
+            if (m_dxl && m_dxl->isOpen()) {
+                pmi::ServoTelemetry tmp[pmi::kTelemetryAxisCount]{};
+                if (m_dxl->syncReadDxlOnly(tmp)) {
+                    // Merge latest AMT21 encoder snapshot (sign applied here).
+                    {
+                        std::lock_guard<std::mutex> lkAmt(amt21SnapMutex);
+                        for (size_t i = 0; i < 3; ++i) {
+                            tmp[i + 1].encoder_position = amt21SnapEnc[i];
+                            if (std::isfinite(tmp[i + 1].encoder_position))
+                                tmp[i + 1].encoder_position *= kEncoderSign[i + 1];
+                        }
+                    }
+                    {
+                        std::lock_guard<std::mutex> lkSnap(snapshotMutex);
+                        sensorSnapshot.valid = true;
+                        for (size_t i = 0; i < pmi::kTelemetryAxisCount; ++i)
+                            sensorSnapshot.axes[i] = tmp[i];
+                    }
+                    consecutiveFails = 0;
+                    nextDxl = now + kDxlPeriod;
+                } else {
+                    ++consecutiveFails;
+                    const auto backoff = sensorBackoff(kDxlPeriod, consecutiveFails, kMaxBackoff);
+                    constexpr auto kFailLogInterval = std::chrono::seconds(1);
+                    if (now - lastDxlFailLog >= kFailLogInterval) {
+                        lastDxlFailLog = now;
+                        std::cerr << "[DXL] sync read failed (consec=" << consecutiveFails
+                                  << ", backoff=" << std::chrono::duration_cast<std::chrono::milliseconds>(backoff).count()
+                                  << "ms)\n";
+                    }
+                    nextDxl = now + backoff;
+                }
+            } else {
+                nextDxl = now + kDxlPeriod;
+            }
+        }
+    });
+
+    // AMT21 poll thread — 15 ms nominal, backoff up to 500 ms on consecutive failures.
+    std::thread amt21PollThread([&]() {
+        constexpr auto kAmt21Period = std::chrono::milliseconds(15);
+        constexpr auto kMaxBackoff  = std::chrono::milliseconds(500);
+        auto nextAmt21 = clock::now();
+        int consecutiveFails = 0;
+
+        while (sensorRunning.load()) {
+            const auto now = clock::now();
+            if (now < nextAmt21) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                continue;
+            }
+
+            if (m_dxl && m_dxl->isOpen()) {
+                double enc[3]{};
+                if (m_dxl->readAllAmt21Angles(enc)) {
+                    {
+                        std::lock_guard<std::mutex> lk(amt21SnapMutex);
+                        for (int i = 0; i < 3; ++i)
+                            amt21SnapEnc[i] = enc[i];
+                    }
+                    consecutiveFails = 0;
+                    nextAmt21 = now + kAmt21Period;
+                } else {
+                    ++consecutiveFails;
+                    nextAmt21 = now + sensorBackoff(kAmt21Period, consecutiveFails, kMaxBackoff);
+                }
+            } else {
+                nextAmt21 = now + kAmt21Period;
+            }
+        }
+    });
+    // ── End sensor threads ───────────────────────────────────────────────────────
+
     while (running.load()) {
         const auto now = clock::now();
         if (now >= nextPoll) {
@@ -593,18 +705,11 @@ void TcpServer::commandSession(int cfd)
             ++txTick;
             pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount]{};
             if (m_dxl && m_dxl->isOpen()) {
-                if (!m_dxl->syncReadTelemetry(axes)) {
-                    constexpr auto kFailLogInterval = std::chrono::seconds(1);
-                    if (now - lastDxlFailLog >= kFailLogInterval) {
-                        lastDxlFailLog = now;
-                        std::cerr << "[DXL] sync read failed (check bus, baud, IDs 1–4)\n";
-                    }
-                } else {
-                    for (size_t i = 0; i < pmi::kTelemetryAxisCount; ++i) {
-                        latestAxes[i] = axes[i];
-                        if ((i > 0) && std::isfinite(latestAxes[i].encoder_position))
-                            latestAxes[i].encoder_position *= kEncoderSign[i];
-                    }
+                // Non-blocking: use the latest snapshot from the sensor threads (stale accepted).
+                std::lock_guard<std::mutex> lkSnap(snapshotMutex);
+                if (sensorSnapshot.valid) {
+                    for (size_t i = 0; i < pmi::kTelemetryAxisCount; ++i)
+                        latestAxes[i] = sensorSnapshot.axes[i];
                     haveLatestTelemetry = true;
                     printDxlTelemetryLines(now, lastDxlTelemetryLog, latestAxes);
                 }
@@ -1222,6 +1327,12 @@ void TcpServer::commandSession(int cfd)
 
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
+
+    sensorRunning.store(false);
+    if (dxlPollThread.joinable())
+        dxlPollThread.join();
+    if (amt21PollThread.joinable())
+        amt21PollThread.join();
 
 client_done:
     running.store(false);

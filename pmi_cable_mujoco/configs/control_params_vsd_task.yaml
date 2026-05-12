@@ -1,0 +1,31 @@
+# 작업공간 VSD (run_vsd) + MuJoCo 토크 모터 ``models/pmi_cable_arm.xml`` 시뮬용.
+
+lambda_residual: [0.08, 0.08, 0.08, 0.08]
+Kp: [55.0, 55.0, 55.0, 55.0]
+Kd: [6.0, 6.0, 6.0, 6.0]
+tau_saturation: [28.0, 28.0, 28.0, 28.0]
+
+# 5D 작업공간: x,y,z, roll, pitch — C++ ``run_vsd`` 의 Ks/Kd 와 동일 역할 (단위·스케일은 MuJoCo에 맞게 조정)
+task_space_vsd:
+  # C++ 과 동일 5D 를 쓰려면 roll/pitch 게인을 올리세요. MuJoCo FK 의 roll 부호/분기와 목표(-π/2,0)가
+  # 어긋나면 오리엔테이션 항만으로 토크가 포화될 수 있어, 기본은 xyz 만 추종합니다.
+  # z 는 중력·J의 z행 상대 이득 때문에 x,y 와 동일 Ks/Kd 이면 추종이 느리기 쉬움 → Ks_z, Kd_z 만 상향.
+  # 웨이포인트 xyz 추종만 할 때는 roll/pitch 게인을 0 에 두는 것을 권장 (비 0 이면 오리엔테이션 항이 xyz 추종을 크게 저해).
+  Ks: [1135500.5, 1135500.5, 1135500.0, 94875.8, 94875.8]
+  Kd: [111800.24, 111800.24, 111800.0, 1109.07, 1109.07]
+  # C++ ``tau + tau_g`` 에 가깝게: MuJoCo ``qfrc_bias`` 관절 성분을 명령에 가산 (정지 근처에서는 중력 비중이 큼)
+  gravity_bias_feedforward: false
+  # 정적 중력 참조(관절 공간, qvel=0 기준 ``qfrc_bias`` 성분 × 배율). bias FF 와 동시에 크게 켜면 과보상될 수 있음.
+  gravity_compensation_gain: 1.0
+
+trajectory:
+  mode: waypoints_xyz
+  planner_dt: 0.001
+  initial_actuator_rad: [1.26513926, 8.49979867, 4.72038433, -1.50169410]
+  waypoints:
+    - { t: 0.0, x: 0.25, y: -0.2, z: -0.1 }
+    - { t: 0.5, x: 0.0, y: -0.35, z: -0.15 }
+    - { t: 1.0, x: -0.25, y: -0.2, z: -0.1 }
+
+simulation:
+  frame_skip: 1

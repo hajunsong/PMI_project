@@ -32,8 +32,6 @@ constexpr uint8_t kAmt21AddressForMotor2 = 0x84;
 constexpr uint8_t kAmt21AddressForMotor3 = 0x74;
 constexpr uint8_t kAmt21AddressForMotor4 = 0x64;
 constexpr int kAmt21ResolutionBits = 14;
-constexpr int kAmt21BaudRate = 115200;
-constexpr const char *kAmt21DevicePath = "/dev/ttyU2D2";
 
 constexpr uint16_t kAddrReturnDelayTime = 9;   // EEPROM — unit: 2 µs; 0 = minimum latency
 constexpr uint16_t kAddrOperatingMode = 11;   // EEPROM — cached, NOT in indirect block
@@ -211,7 +209,7 @@ void DxlBus::closeUnlocked()
     indirect_setup_ok_ = false;
 }
 
-bool DxlBus::open(const char *devicePath, int baudRate)
+bool DxlBus::open(const char *devicePath, int baudRate, const char *amt21DevicePath, int amt21BaudRate)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     closeUnlocked();
@@ -240,7 +238,12 @@ bool DxlBus::open(const char *devicePath, int baudRate)
     rebuildSyncGroupsUnlocked();
     refreshOpModeCacheUnlocked();
 
-    (void)openAmt21PortUnlocked(kAmt21DevicePath, kAmt21BaudRate);
+    if (amt21DevicePath && amt21DevicePath[0] != '\0') {
+        if (!openAmt21PortUnlocked(std::string(amt21DevicePath), amt21BaudRate))
+            std::cerr << "[AMT21] open failed: " << amt21DevicePath << " @ " << amt21BaudRate << "\n";
+    } else {
+        std::cerr << "[PMI] AMT21 UART disabled (no amt21_serial_device)\n";
+    }
     loadZeroOffsetFromFileUnlocked();
     return true;
 }
@@ -486,14 +489,12 @@ void DxlBus::close()
     closeUnlocked();
 }
 
-bool DxlBus::syncReadRawTelemetryUnlocked(pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount])
+bool DxlBus::syncReadRawDxlOnlyUnlocked(pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount])
 {
     if (!port_ || !packet_ || !sync_read_telemetry_)
         return false;
 
-    // Broadcast GroupSyncRead: one instruction packet → 4 status packets, all collected in one
-    // txRxPacket() call. Valid on U2D2 / /dev/ttyUSB*. Each motor returns its 23-byte indirect
-    // data block in a single response, which the SDK demultiplexes per-ID.
+    // Broadcast GroupSyncRead: one instruction packet → 4 status packets collected in one call.
     const int rc = sync_read_telemetry_->txRxPacket();
     if (rc != COMM_SUCCESS) {
         std::cerr << "[DXL] GroupSyncRead failed: " << packet_->getTxRxResult(rc)
@@ -529,7 +530,7 @@ bool DxlBus::syncReadRawTelemetryUnlocked(pmi::ServoTelemetry axes[pmi::kTelemet
         axes[i].id_op_mode       = pmi::packTelemetryIdOp(id, op_mode_cache_[i]);
         axes[i].servo_state      = torqueOn ? 1 : 0;
         axes[i].present_position = static_cast<double>(presPosRaw) * kPulseToDeg;
-        axes[i].encoder_position = std::nan("");
+        axes[i].encoder_position = std::nan("");   // AMT21 not read in this path
         axes[i].present_velocity = static_cast<double>(presVelRaw) * kVelRawToRpm * kRpmToDegPerSec;
         axes[i].present_current  = static_cast<double>(presCurRaw) * kCurRawToMa * kMaToA;
         axes[i].goal_position    = static_cast<double>(goalPosRaw) * kPulseToDeg;
@@ -537,8 +538,15 @@ bool DxlBus::syncReadRawTelemetryUnlocked(pmi::ServoTelemetry axes[pmi::kTelemet
         axes[i].goal_current     = static_cast<double>(goalCurRaw) * kCurRawToMa * kMaToA;
         axes[i].error_state      = hwErr;
     }
+    return true;
+}
 
-    // 3) AMT21 absolute encoders on the secondary UART (axes 1–3 only).
+bool DxlBus::syncReadRawTelemetryUnlocked(pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount])
+{
+    if (!syncReadRawDxlOnlyUnlocked(axes))
+        return false;
+
+    // AMT21 absolute encoders on the secondary UART (axes 1–3 only).
     struct AmtMap {
         uint8_t motorId;
         uint8_t nodeAddress;
@@ -589,6 +597,61 @@ bool DxlBus::syncReadTelemetry(pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount
         return false;
     applyZeroOffsetUnlocked(axes);
     return true;
+}
+
+bool DxlBus::syncReadDxlOnly(pmi::ServoTelemetry axes[pmi::kTelemetryAxisCount])
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!syncReadRawDxlOnlyUnlocked(axes))
+        return false;
+    applyZeroOffsetUnlocked(axes);
+    return true;
+}
+
+bool DxlBus::readAllAmt21Angles(double encDeg[3])
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (amt21_fd_ < 0)
+        return false;
+
+    constexpr uint8_t kNodeAddr[3] = {
+        kAmt21AddressForMotor2, kAmt21AddressForMotor3, kAmt21AddressForMotor4
+    };
+    constexpr size_t kAxisIdx[3] = {1, 2, 3};
+
+    bool anyOk = false;
+    const auto now = std::chrono::steady_clock::now();
+    constexpr auto kFailLogInterval = std::chrono::seconds(1);
+
+    for (size_t i = 0; i < 3; ++i) {
+        encDeg[i] = std::nan("");
+        double angleDeg = 0.0;
+        const bool ok = readAmt21AngleDegUnlocked(kNodeAddr[i], angleDeg);
+        if (ok) {
+            // Apply encoder zero-offset (same logic as applyZeroOffsetUnlocked).
+            if (zero_offset_valid_ && std::isfinite(encoder_offset_deg_[kAxisIdx[i]]))
+                angleDeg -= encoder_offset_deg_[kAxisIdx[i]];
+            encDeg[i] = angleDeg;
+            anyOk = true;
+            if (amt21_in_fail_state_[i]) {
+                std::cerr << "[AMT21] recovered: axis " << kAxisIdx[i]
+                          << " after " << amt21_fail_count_[i] << " failed read(s)\n";
+                amt21_in_fail_state_[i] = false;
+                amt21_fail_count_[i] = 0;
+                amt21_last_fail_log_[i] = {};
+            }
+        } else {
+            ++amt21_fail_count_[i];
+            if (!amt21_in_fail_state_[i] || (now - amt21_last_fail_log_[i]) >= kFailLogInterval) {
+                std::cerr << "[AMT21] read failed: axis " << kAxisIdx[i]
+                          << " addr=0x" << std::hex << static_cast<int>(kNodeAddr[i]) << std::dec
+                          << " (fail count=" << amt21_fail_count_[i] << ")\n";
+                amt21_last_fail_log_[i] = now;
+            }
+            amt21_in_fail_state_[i] = true;
+        }
+    }
+    return anyOk;
 }
 
 bool DxlBus::captureZeroOffsetUnlocked()

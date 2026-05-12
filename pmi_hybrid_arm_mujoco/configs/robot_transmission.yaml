@@ -1,0 +1,48 @@
+# Position convention (URDF mimic): q_joint = ratio * q_actuator
+#
+# Ideal torque mapping (consistent power tau_act*qdot_act = tau_joint*qdot_joint,
+# with qdot_joint = ratio * qdot_act):
+#   tau_joint = tau_act / ratio
+
+joints:
+  jnt1:
+    actuator: q1_act
+    type: belt
+    ratio: 0.5333
+    # Stretch: x = r_motor*q_act - r_joint*q_jnt - x0  (defaults below)
+    r_motor: 1.0
+    r_joint: 1.875117445  # ~= 1/0.5333 ; ideal torque τ_joint = τ_act / ratio when T_out=T_in path
+    x0: 0.0
+  jnt2:
+    actuator: q2_act
+    type: cable
+    ratio: 0.15
+    r_motor: 1.0
+    r_joint: 6.666666667  # ~= 1/0.15
+    x0: 0.0
+  jnt3:
+    actuator: q3_act
+    type: cable
+    ratio: 0.3
+    r_motor: 1.0
+    r_joint: 3.333333333
+    x0: 0.0
+  jnt4:
+    actuator: q4_act
+    type: cable
+    ratio: 0.3
+    r_motor: 1.0
+    r_joint: 3.333333333
+    x0: 0.0
+
+actuator_order:
+  - q1_act
+  - q2_act
+  - q3_act
+  - q4_act
+
+joint_side_order:
+  - jnt1
+  - jnt2
+  - jnt3
+  - jnt4
