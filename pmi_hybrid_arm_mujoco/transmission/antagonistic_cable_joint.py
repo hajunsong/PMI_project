@@ -1,9 +1,14 @@
-"""Antagonistic cable pair routed through two CableTransmission elements."""
+"""Antagonistic cable pair routed through two ImperfectCableTransmission elements."""
 
 
 from dataclasses import dataclass
 
-from .cable_transmission import CableTransmission, CableTransmissionParams, cable_stretch, cable_stretch_rate
+from .imperfect_cable_transmission import (
+    CableTransmissionParams,
+    ImperfectCableTransmission,
+    cable_stretch,
+    cable_stretch_rate,
+)
 
 
 @dataclass
@@ -18,13 +23,13 @@ class AntagonisticCableJoint:
         T_plus_cmd  = T_preload + max(tau_motor_cmd, 0) / max(r_joint, eps)
         T_minus_cmd = T_preload + max(-tau_motor_cmd, 0) / max(r_joint, eps)
 
-    Each CableTransmission receives motor-side tau_branch = r_motor * T_branch_cmd interpreted
+    Each ImperfectCableTransmission receives motor-side tau_branch = r_motor * T_branch_cmd interpreted
     as equivalent pulley winding torque before nonlinearities.
 
         tau_joint = r_joint * (T_plus_out - T_minus_out)
 
     Structural rule:
-        tau_motor_cmd is ONLY the Phase-2/VSD actuator torque; imperfections enter solely via CableTransmission().
+        tau_motor_cmd is ONLY the Phase-2/VSD actuator torque; imperfections enter solely via ImperfectCableTransmission().
     """
 
     def __init__(
@@ -33,8 +38,8 @@ class AntagonisticCableJoint:
         antag: AntagonisticParams,
     ):
         self._preload = float(max(antag.preload_tension, 0.0))
-        self._plus = CableTransmission(cable_params)
-        self._minus = CableTransmission(cable_params)
+        self._plus = ImperfectCableTransmission(cable_params)
+        self._minus = ImperfectCableTransmission(cable_params)
 
     def reset(self) -> None:
         self._plus.reset()

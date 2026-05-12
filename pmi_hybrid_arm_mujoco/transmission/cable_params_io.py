@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .cable_transmission import CableTransmissionParams
+from .imperfect_cable_transmission import CableTransmissionParams
 from .hysteresis import BoucWenParams
 
 

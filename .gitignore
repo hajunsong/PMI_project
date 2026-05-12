@@ -152,3 +152,10 @@ analysis/cpp/plots/
 
 # 하이브리드 MuJoCo: JTF 스윕 전구간 시계열 (100MB+ → GitHub 거부, 스크립트로 재생성)
 pmi_hybrid_arm_mujoco/debug_outputs/no_collision_tracking/task_space_jtf_no_collision.csv
+
+# 하이브리드 MuJoCo — 로컬 venv·바이트코드·대용량 디버그 산출물 (스크립트로 재생성)
+pmi_hybrid_arm_mujoco/.venv_demo/
+pmi_hybrid_arm_mujoco/**/__pycache__/
+pmi_hybrid_arm_mujoco/**/*.py[cod]
+pmi_hybrid_arm_mujoco/debug_outputs/cable_layer/
+pmi_hybrid_arm_mujoco/debug_outputs/task_space_demo/

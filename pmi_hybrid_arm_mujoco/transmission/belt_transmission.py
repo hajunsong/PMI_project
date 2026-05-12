@@ -1,20 +1,24 @@
 """
-Ideal belt/gear torque mapping (motor-side actuator torque -> joint torque).
+Ideal belt path for q1_act → jnt1 (equality model already couples positions).
 
-Position law (same as mimic):
-    theta_joint = ratio * theta_actuator
-
-Consistent instantaneous power approximate identity:
-    tau_act * qdot_act = tau_joint * qdot_joint ,   qdot_joint = ratio * qdot_act
-=> tau_joint = tau_act / ratio
+Torque stage: actuator-side identity so `tau_act_out` matches the ideal mapping from joint VSD.
 """
 
 
 class BeltTransmission:
-    """Simple ratio element for jnt1 / q1_act only (no elasticity in Phase 3 path)."""
+    """Belt joint: jnt1 / q1_act. Scaffold applies ideal pass-through on actuator torque."""
+
+    @staticmethod
+    def transmit(tau_act_ideal: float) -> float:
+        return float(tau_act_ideal)
 
     @staticmethod
     def transmit_torque(tau_act: float, ratio: float) -> float:
+        """
+        Kinematic joint torque implied by actuator torque when qdot_jnt = ratio * qdot_act:
+            tau_joint = tau_act / ratio
+        (Not used by the cable-layer scaffold; kept for power-consistency reference.)
+        """
         r = float(ratio)
         if abs(r) < 1e-12:
             raise ValueError("transmission ratio too small")

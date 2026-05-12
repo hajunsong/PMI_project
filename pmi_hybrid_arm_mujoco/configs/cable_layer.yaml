@@ -1,0 +1,389 @@
+# Cable-layer (q2_act–q4_act): delay, friction sweeps.
+# q1_act uses BeltTransmission (no cable dynamics).
+
+cable_delay:
+  enabled: true
+  tau_delay:
+    q2_act: 0.005
+    q3_act: 0.005
+    q4_act: 0.005
+  initialize_state_to_input: true
+
+# Sweep values (seconds); same scalar applied to q2_act, q3_act, q4_act when sweeping delay only.
+tau_delay_sweep:
+  - 0.0
+  - 0.002
+  - 0.005
+  - 0.01
+  - 0.02
+  - 0.05
+
+# Actuator-side cable loss (q2–q4); friction opposes qdot_act.
+cable_friction:
+  enabled: true
+  viscous_b:
+    q2_act: 0.0
+    q3_act: 0.0
+    q4_act: 0.0
+  coulomb_fc:
+    q2_act: 0.0
+    q3_act: 0.0
+    q4_act: 0.0
+  v_eps: 0.01
+  # tau_out_clip: null   # optional symmetric N·m clip on cable outputs
+
+# Named friction/delay scenarios (same b, fc, tau_delay applied to q2–q4).
+friction_sweep:
+  - name: no_friction
+    tau_delay: 0.0
+    viscous_b: 0.0
+    coulomb_fc: 0.0
+
+  - name: light_viscous
+    tau_delay: 0.005
+    viscous_b: 0.001
+    coulomb_fc: 0.0
+
+  - name: medium_viscous
+    tau_delay: 0.005
+    viscous_b: 0.005
+    coulomb_fc: 0.0
+
+  - name: light_coulomb
+    tau_delay: 0.005
+    viscous_b: 0.0
+    coulomb_fc: 0.002
+
+  - name: medium_coulomb
+    tau_delay: 0.005
+    viscous_b: 0.0
+    coulomb_fc: 0.005
+
+  - name: combined_light
+    tau_delay: 0.005
+    viscous_b: 0.001
+    coulomb_fc: 0.002
+
+  - name: combined_medium
+    tau_delay: 0.01
+    viscous_b: 0.005
+    coulomb_fc: 0.005
+
+# Torque compliance (first-order lag on tau_after_delay); same time constant per q2–q4 in sweeps.
+cable_elasticity:
+  enabled: true
+  mode: torque_compliance
+  tau_elastic:
+    q2_act: 0.0
+    q3_act: 0.0
+    q4_act: 0.0
+  initialize_state_to_input: true
+
+elasticity_sweep:
+  - name: no_elasticity
+    tau_delay: 0.005
+    viscous_b: 0.001
+    coulomb_fc: 0.002
+    tau_elastic: 0.0
+
+  - name: light_elasticity
+    tau_delay: 0.005
+    viscous_b: 0.001
+    coulomb_fc: 0.002
+    tau_elastic: 0.005
+
+  - name: medium_elasticity
+    tau_delay: 0.005
+    viscous_b: 0.001
+    coulomb_fc: 0.002
+    tau_elastic: 0.02
+
+  - name: strong_elasticity
+    tau_delay: 0.005
+    viscous_b: 0.001
+    coulomb_fc: 0.002
+    tau_elastic: 0.05
+
+  - name: strong_elasticity_medium_loss
+    tau_delay: 0.01
+    viscous_b: 0.005
+    coulomb_fc: 0.005
+    tau_elastic: 0.05
+
+# Torque dead-zone + direction-dependent backlash (q2–q4 only; not geometric).
+cable_backlash_deadzone:
+  enabled: true
+  tau_deadzone:
+    q2_act: 0.0
+    q3_act: 0.0
+    q4_act: 0.0
+  backlash_width:
+    q2_act: 0.0
+    q3_act: 0.0
+    q4_act: 0.0
+  backlash_slope: 0.0
+  tau_eps: 0.001
+  deadzone_mode: hard
+
+backlash_sweep:
+  - name: no_backlash
+    tau_delay: 0.005
+    viscous_b: 0.001
+    coulomb_fc: 0.002
+    tau_elastic: 0.005
+    tau_deadzone: 0.0
+    backlash_width: 0.0
+    backlash_slope: 1.0
+
+  - name: light_deadzone
+    tau_delay: 0.005
+    viscous_b: 0.001
+    coulomb_fc: 0.002
+    tau_elastic: 0.005
+    tau_deadzone: 0.001
+    backlash_width: 0.0
+    backlash_slope: 1.0
+
+  - name: medium_deadzone
+    tau_delay: 0.005
+    viscous_b: 0.001
+    coulomb_fc: 0.002
+    tau_elastic: 0.005
+    tau_deadzone: 0.005
+    backlash_width: 0.0
+    backlash_slope: 1.0
+
+  - name: light_backlash
+    tau_delay: 0.005
+    viscous_b: 0.001
+    coulomb_fc: 0.002
+    tau_elastic: 0.005
+    tau_deadzone: 0.001
+    backlash_width: 0.005
+    backlash_slope: 0.2
+
+  - name: medium_backlash
+    tau_delay: 0.005
+    viscous_b: 0.001
+    coulomb_fc: 0.002
+    tau_elastic: 0.005
+    tau_deadzone: 0.005
+    backlash_width: 0.02
+    backlash_slope: 0.1
+
+  - name: strong_backlash
+    tau_delay: 0.01
+    viscous_b: 0.005
+    coulomb_fc: 0.005
+    tau_elastic: 0.02
+    tau_deadzone: 0.01
+    backlash_width: 0.05
+    backlash_slope: 0.0
+
+# Bouc–Wen hysteresis on torque-compliant path (before dead-zone/backlash).
+cable_hysteresis:
+  enabled: true
+  mode: torque_bouc_wen
+  alpha:
+    q2_act: 0.0
+    q3_act: 0.0
+    q4_act: 0.0
+  A:
+    q2_act: 1.0
+    q3_act: 1.0
+    q4_act: 1.0
+  beta:
+    q2_act: 0.5
+    q3_act: 0.5
+    q4_act: 0.5
+  gamma:
+    q2_act: 0.5
+    q3_act: 0.5
+    q4_act: 0.5
+  n:
+    q2_act: 1.0
+    q3_act: 1.0
+    q4_act: 1.0
+  z_max: 1.0
+  tau_hys_max: 1.0
+  initialize_z_to_zero: true
+
+hysteresis_sweep:
+  - name: no_hysteresis
+    tau_delay: 0.005
+    viscous_b: 0.001
+    coulomb_fc: 0.002
+    tau_elastic: 0.005
+    tau_deadzone: 0.001
+    backlash_width: 0.0
+    backlash_slope: 1.0
+    hys_alpha: 0.0
+    hys_A: 1.0
+    hys_beta: 0.5
+    hys_gamma: 0.5
+    hys_n: 1.0
+
+  - name: light_hysteresis
+    tau_delay: 0.005
+    viscous_b: 0.001
+    coulomb_fc: 0.002
+    tau_elastic: 0.005
+    tau_deadzone: 0.001
+    backlash_width: 0.0
+    backlash_slope: 1.0
+    hys_alpha: 0.001
+    hys_A: 1.0
+    hys_beta: 0.5
+    hys_gamma: 0.5
+    hys_n: 1.0
+
+  - name: medium_hysteresis
+    tau_delay: 0.005
+    viscous_b: 0.001
+    coulomb_fc: 0.002
+    tau_elastic: 0.005
+    tau_deadzone: 0.001
+    backlash_width: 0.0
+    backlash_slope: 1.0
+    hys_alpha: 0.005
+    hys_A: 1.0
+    hys_beta: 0.7
+    hys_gamma: 0.3
+    hys_n: 1.0
+
+  - name: strong_hysteresis
+    tau_delay: 0.005
+    viscous_b: 0.001
+    coulomb_fc: 0.002
+    tau_elastic: 0.005
+    tau_deadzone: 0.001
+    backlash_width: 0.005
+    backlash_slope: 0.2
+    hys_alpha: 0.01
+    hys_A: 1.0
+    hys_beta: 0.8
+    hys_gamma: 0.4
+    hys_n: 1.0
+
+  - name: stress_hysteresis
+    tau_delay: 0.01
+    viscous_b: 0.005
+    coulomb_fc: 0.005
+    tau_elastic: 0.02
+    tau_deadzone: 0.005
+    backlash_width: 0.02
+    backlash_slope: 0.1
+    hys_alpha: 0.02
+    hys_A: 1.0
+    hys_beta: 1.0
+    hys_gamma: 0.5
+    hys_n: 1.0
+
+randomization:
+  enabled: false
+  seed: 0
+  apply_to:
+    - q2_act
+    - q3_act
+    - q4_act
+
+  ranges:
+    tau_delay: [0.002, 0.01]
+    viscous_b: [0.0005, 0.003]
+    coulomb_fc: [0.001, 0.004]
+    tau_elastic: [0.002, 0.015]
+    tau_deadzone: [0.0, 0.002]
+    backlash_width: [0.0, 0.005]
+    backlash_slope: [0.2, 1.0]
+
+    hys_alpha: [0.0, 0.003]
+    hys_A: [0.8, 1.2]
+    hys_beta: [0.3, 0.8]
+    hys_gamma: [0.2, 0.7]
+    hys_n: [1.0, 1.2]
+
+  mode: uniform
+  per_joint_independent: true
+
+# Optional named profiles (same structural keys as `randomization`). Legacy `randomization.ranges`
+# remains the default mild tuning when resolving samples without profiles.
+active_profile: mild
+
+randomization_profiles:
+  mild:
+    ranges:
+      tau_delay: [0.002, 0.01]
+      viscous_b: [0.0005, 0.003]
+      coulomb_fc: [0.001, 0.004]
+      tau_elastic: [0.002, 0.015]
+      tau_deadzone: [0.0, 0.002]
+      backlash_width: [0.0, 0.005]
+      backlash_slope: [0.2, 1.0]
+      hys_alpha: [0.0, 0.003]
+      hys_A: [0.8, 1.2]
+      hys_beta: [0.3, 0.8]
+      hys_gamma: [0.2, 0.7]
+      hys_n: [1.0, 1.2]
+
+  medium:
+    ranges:
+      tau_delay: [0.005, 0.03]
+      viscous_b: [0.001, 0.01]
+      coulomb_fc: [0.002, 0.015]
+      tau_elastic: [0.005, 0.05]
+      tau_deadzone: [0.001, 0.01]
+      backlash_width: [0.0, 0.03]
+      backlash_slope: [0.0, 0.5]
+      hys_alpha: [0.001, 0.015]
+      hys_A: [0.8, 1.5]
+      hys_beta: [0.5, 1.2]
+      hys_gamma: [0.2, 1.0]
+      hys_n: [1.0, 1.5]
+
+  # Safer intermediate domain-randomization for SAC residuals: tighter tau_delay / elasticity / hysteresis vs medium,
+  # backlash_slope kept away from 0 for torque dropout.
+  medium_v2:
+    ranges:
+      tau_delay: [0.003, 0.018]
+      viscous_b: [0.001, 0.008]
+      coulomb_fc: [0.002, 0.012]
+      tau_elastic: [0.004, 0.025]
+      tau_deadzone: [0.0005, 0.006]
+      backlash_width: [0.0, 0.015]
+      backlash_slope: [0.2, 0.7]
+      hys_alpha: [0.0005, 0.008]
+      hys_A: [0.8, 1.3]
+      hys_beta: [0.4, 1.0]
+      hys_gamma: [0.2, 0.8]
+      hys_n: [1.0, 1.3]
+
+  # Training-focused domain randomization: harder floor than medium_v2, capped below medium extremes.
+  medium_train:
+    ranges:
+      tau_delay: [0.006, 0.018]
+      viscous_b: [0.001, 0.007]
+      coulomb_fc: [0.002, 0.010]
+      tau_elastic: [0.006, 0.024]
+      tau_deadzone: [0.001, 0.006]
+      backlash_width: [0.0, 0.012]
+      backlash_slope: [0.3, 0.75]
+      hys_alpha: [0.001, 0.007]
+      hys_A: [0.8, 1.3]
+      hys_beta: [0.4, 1.0]
+      hys_gamma: [0.2, 0.8]
+      hys_n: [1.0, 1.3]
+
+  stress:
+    ranges:
+      tau_delay: [0.01, 0.08]
+      viscous_b: [0.005, 0.03]
+      coulomb_fc: [0.005, 0.04]
+      tau_elastic: [0.02, 0.10]
+      tau_deadzone: [0.005, 0.03]
+      backlash_width: [0.01, 0.08]
+      backlash_slope: [0.0, 0.3]
+      hys_alpha: [0.005, 0.04]
+      hys_A: [0.8, 2.0]
+      hys_beta: [0.8, 2.0]
+      hys_gamma: [0.5, 1.5]
+      hys_n: [1.0, 2.0]
