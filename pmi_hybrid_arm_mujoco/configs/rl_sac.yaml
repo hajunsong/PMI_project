@@ -1,0 +1,53 @@
+# SAC residual policy: learns task-space end-effector force (not joint torque).
+
+env:
+  model_path: models/pmi_hybrid_no_collision.xml
+  randomization_profile: medium_train
+  randomize_cable: true
+  episode_duration: 5.0
+  control_dt: 0.01
+  tau_jnt_limit: 30
+  normalize_observation: true
+
+residual:
+  type: task_space_force
+  action_dim: 3
+  force_axes: xyz
+  residual_force_scale: 5.0
+  lambda_residual: 1.0
+  residual_mode: cable_joints_only_from_task_force
+
+trajectory:
+  waypoints:
+    - { t: 0.0, x: 0.25, y: -0.20, z: -0.10 }
+    - { t: 0.5, x: 0.00, y: -0.35, z: -0.15 }
+    - { t: 1.0, x: -0.25, y: -0.20, z: -0.10 }
+  duration: 5.0
+
+controller:
+  Kq: [80, 80, 60, 40]
+  Dq: [10, 10, 8, 5]
+
+reward:
+  w_ee: 100.0
+  w_q: 5.0
+  w_f: 0.001
+  w_df: 0.0005
+  w_tau: 0.001
+  w_sat: 0.1
+  w_lim: 10.0
+  use_improvement_reward: false
+  w_improve: 10.0
+
+sac:
+  total_timesteps_smoke: 1000
+  total_timesteps_short: 10000
+  total_timesteps_train: 100000
+  learning_rate: 0.0003
+  buffer_size: 200000
+  batch_size: 256
+  gamma: 0.99
+  tau: 0.005
+  train_freq: 1
+  gradient_steps: 1
+  learning_starts: 1000

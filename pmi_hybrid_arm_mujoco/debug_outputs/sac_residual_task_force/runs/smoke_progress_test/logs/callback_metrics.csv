@@ -1,0 +1,8 @@
+global_step,utc_iso,logger_keys_concat
+1,2026-05-12T18:48:38+00:00,
+400,2026-05-12T18:48:43+00:00,train/actor_loss=-6.18264;train/critic_loss=0.05373;train/ent_coef=0.900799;train/ent_coef_loss=-0.529113;train/learning_rate=0.0003;train/n_updates=349
+800,2026-05-12T18:48:48+00:00,train/actor_loss=-8.47947;train/critic_loss=0.0434856;train/ent_coef=0.79891;train/ent_coef_loss=-1.13166;train/learning_rate=0.0003;train/n_updates=749
+1,2026-05-13T02:59:29+00:00,
+1,2026-05-13T02:59:57+00:00,
+500,2026-05-13T03:00:05+00:00,train/actor_loss=-6.28648;train/critic_loss=0.0418825;train/ent_coef=0.887375;train/ent_coef_loss=-0.600857;train/learning_rate=0.0003;train/n_updates=399
+1000,2026-05-13T03:00:13+00:00,train/actor_loss=-9.02981;train/critic_loss=0.031852;train/ent_coef=0.763733;train/ent_coef_loss=-1.36122;train/learning_rate=0.0003;train/n_updates=899

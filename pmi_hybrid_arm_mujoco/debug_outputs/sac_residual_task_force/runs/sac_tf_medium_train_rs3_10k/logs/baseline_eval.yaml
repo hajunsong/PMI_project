@@ -1,0 +1,18 @@
+baseline_zero_policy_metrics:
+  mean_episode_return: -203.74261043951554
+  std_episode_return: 137.77598811579162
+  mean_episode_length: 500.0
+  mean_ee_rms: 0.02506300780254417
+  std_ee_rms_mean_across_eps: 0.010944210746582039
+  mean_sat_frac: 0.8228
+  mean_lim_frac: 0.010400000000000001
+  frac_eps_any_ncon: 0.0
+  mean_q_err_rms: 0.16785321998201058
+  mean_finite_frac: 1.0
+  mean_action_norm: 0.0
+  max_action_norm: 0.0
+  mean_residual_force_norm: 0.0
+  max_residual_force_norm: 0.0
+  mean_residual_tau_norm: 0.0
+  max_residual_tau_norm: 0.0
+  mean_action_rate: 0.0

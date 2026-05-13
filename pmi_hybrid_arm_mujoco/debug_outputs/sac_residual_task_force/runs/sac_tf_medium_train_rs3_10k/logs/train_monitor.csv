@@ -1,0 +1,17 @@
+run_name,seed,profile,eval_type,r,l,t
+sac_tf_medium_train_rs3_10k,1,medium_train,train_episode,-171.357731,500,13.661429
+sac_tf_medium_train_rs3_10k,1,medium_train,train_episode,-202.742893,500,14.635261
+sac_tf_medium_train_rs3_10k,1,medium_train,train_episode,-204.020576,500,18.106534
+sac_tf_medium_train_rs3_10k,1,medium_train,train_episode,-110.510206,500,21.678067
+sac_tf_medium_train_rs3_10k,1,medium_train,train_episode,-431.026055,500,37.052095
+sac_tf_medium_train_rs3_10k,1,medium_train,train_episode,-77.868224,500,40.575344
+sac_tf_medium_train_rs3_10k,1,medium_train,train_episode,-178.457352,500,44.010318
+sac_tf_medium_train_rs3_10k,1,medium_train,train_episode,-237.485767,500,47.47082
+sac_tf_medium_train_rs3_10k,1,medium_train,train_episode,-427.425187,500,62.747957
+sac_tf_medium_train_rs3_10k,1,medium_train,train_episode,-82.007364,69,63.269799
+sac_tf_medium_train_rs3_10k,1,medium_train,train_episode,-173.095636,500,66.726374
+sac_tf_medium_train_rs3_10k,1,medium_train,train_episode,-207.284813,500,70.159904
+sac_tf_medium_train_rs3_10k,1,medium_train,train_episode,-335.078328,500,84.714165
+sac_tf_medium_train_rs3_10k,1,medium_train,train_episode,-106.722587,500,88.224026
+sac_tf_medium_train_rs3_10k,1,medium_train,train_episode,-115.164798,500,91.716761
+sac_tf_medium_train_rs3_10k,1,medium_train,train_episode,-175.794197,500,95.219523
