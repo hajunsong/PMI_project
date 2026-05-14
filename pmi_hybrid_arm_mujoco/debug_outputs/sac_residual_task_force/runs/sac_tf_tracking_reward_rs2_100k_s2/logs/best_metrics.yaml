@@ -1,0 +1,9 @@
+best_reward: -283.5631171889758
+best_reward_step: 1
+best_ee_rms: 0.0197053020542627
+best_ee_rms_step: 10000
+best_final_ee_error: 0.018070215134285698
+best_saturation_fraction: 0.7551885985872687
+best_limit_violation_fraction: 0.018897951120333694
+best_combined_tracking_score: 0.028740409621405547
+best_combined_tracking_step: 10000

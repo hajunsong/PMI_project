@@ -16,6 +16,28 @@ residual:
   residual_force_scale: 5.0
   lambda_residual: 1.0
   residual_mode: cable_joints_only_from_task_force
+  residual_gain: 1.0
+
+# First-order low-pass on scaled residual force before Jᵀ F (recommended for smooth_tracking_final runs via CLI).
+residual_filter:
+  enabled: false
+  tau: 0.03
+
+# Optional slew limit on scaled force before the low-pass stage (disabled by default; enable for ablations).
+action_smoothing:
+  enabled: false
+  max_delta_force_per_step: 0.5
+
+# Evaluation / deploy: smoothstep fade-out of post-filtered residual force in the last seconds of the episode.
+residual_postprocess:
+  final_fade_duration: 0.0
+
+# When enabled, each reset runs a cached zero-residual rollout (same cable seed) and shapes reward
+# relative to that VSD-only baseline. See reward_presets.baseline_relative_smooth.
+baseline_relative_reward:
+  enabled: false
+  cache_zero_rollout_on_reset: true
+  include_baseline_reference_in_obs: false
 
 trajectory:
   waypoints:
@@ -28,16 +50,137 @@ controller:
   Kq: [80, 80, 60, 40]
   Dq: [10, 10, 8, 5]
 
+# Active preset name: overridden by train script --reward-preset
+reward_preset: default
+
+reward_presets:
+  default:
+    w_ee: 100.0
+    w_q: 5.0
+    w_f: 0.001
+    w_df: 0.0005
+    w_tau: 0.001
+    w_tau_rate: 0.0
+    w_sat: 0.1
+    w_lim: 10.0
+    use_ee_l1: false
+    w_ee_l1: 0.0
+    w_ee_vel: 0.0
+    w_ee_acc: 0.0
+    w_ee_highfreq: 0.0
+    highfreq_lp_hz: 8.0
+    use_improvement_reward: false
+    w_improve: 10.0
+    use_terminal_final_error_penalty: false
+    w_final_ee: 20.0
+    use_terminal_final_velocity_penalty: false
+    w_final_ee_vel: 0.0
+
+  tracking_focused:
+    w_ee: 500.0
+    w_q: 2.0
+    w_f: 0.003
+    w_df: 0.001
+    w_tau: 0.003
+    w_tau_rate: 0.0
+    w_sat: 0.05
+    w_lim: 10.0
+    use_ee_l1: true
+    w_ee_l1: 5.0
+    w_ee_vel: 0.0
+    w_ee_acc: 0.0
+    w_ee_highfreq: 0.0
+    highfreq_lp_hz: 8.0
+    use_improvement_reward: false
+    w_improve: 10.0
+    use_terminal_final_error_penalty: true
+    w_final_ee: 20.0
+    use_terminal_final_velocity_penalty: false
+    w_final_ee_vel: 0.0
+
+  tracking_smooth_final:
+    w_ee: 600.0
+    use_ee_l1: true
+    w_ee_l1: 8.0
+    w_q: 1.0
+    w_f: 0.01
+    w_df: 0.01
+    w_tau: 0.005
+    w_tau_rate: 0.002
+    w_ee_vel: 2.0
+    w_ee_acc: 0.02
+    w_ee_highfreq: 50.0
+    highfreq_lp_hz: 8.0
+    w_sat: 0.05
+    w_lim: 10.0
+    use_improvement_reward: false
+    w_improve: 10.0
+    use_terminal_final_error_penalty: true
+    w_final_ee: 80.0
+    use_terminal_final_velocity_penalty: true
+    w_final_ee_vel: 5.0
+
+  # Improvement vs VSD-with-zero-residual on the same randomized cable episode (reward uses cached baseline rollout).
+  # Recommended pairing (CLI example): `--residual-filter-tau 0.08 --action-smoothing --max-delta-force-per-step 0.2`.
+  baseline_relative_smooth:
+    w_ee: 0.0
+    w_q: 0.0
+    w_ee_l1: 0.0
+    use_ee_l1: false
+    w_ee_vel: 0.0
+    w_ee_acc: 0.0
+    w_ee_highfreq: 0.0
+    highfreq_lp_hz: 8.0
+    w_sat: 0.0
+    w_lim: 0.0
+    w_rel_ee: 1000.0
+    w_rel_ee_l1: 20.0
+    w_rel_vel: 5.0
+    w_rel_hf: 200.0
+    w_f: 0.005
+    w_df: 0.005
+    w_tau: 0.003
+    w_tau_rate: 0.002
+    w_sat_extra: 0.1
+    w_lim_extra: 10.0
+    use_terminal_relative_final_error: true
+    w_rel_final: 100.0
+    use_improvement_reward: false
+    w_improve: 10.0
+    use_terminal_final_error_penalty: false
+    w_final_ee: 0.0
+    use_terminal_final_velocity_penalty: false
+    w_final_ee_vel: 0.0
+
 reward:
   w_ee: 100.0
   w_q: 5.0
   w_f: 0.001
   w_df: 0.0005
   w_tau: 0.001
+  w_tau_rate: 0.0
   w_sat: 0.1
   w_lim: 10.0
+  use_ee_l1: false
+  w_ee_l1: 0.0
+  w_ee_vel: 0.0
+  w_ee_acc: 0.0
+  w_ee_highfreq: 0.0
+  highfreq_lp_hz: 8.0
   use_improvement_reward: false
   w_improve: 10.0
+  use_terminal_final_error_penalty: false
+  w_final_ee: 20.0
+  use_terminal_final_velocity_penalty: false
+  w_final_ee_vel: 0.0
+  w_rel_ee: 0.0
+  w_rel_ee_l1: 0.0
+  w_rel_vel: 0.0
+  w_rel_hf: 0.0
+  w_sat_extra: 0.0
+  w_lim_extra: 0.0
+  use_terminal_relative_final_error: false
+  w_rel_final: 0.0
 
 sac:
   total_timesteps_smoke: 1000

@@ -1,0 +1,61 @@
+config: /home/keti/Project/12_FieldSensor/PMI_Project/pmi_hybrid_arm_mujoco/configs/rl_sac.yaml
+profile: medium_train
+run_name: sac_tf_tracking_reward_rs2_30k_s2
+timesteps: 30000
+seed: 2
+use_vecnormalize: true
+resume: false
+reward_preset: tracking_focused
+rl_overrides:
+  env:
+    randomization_profile: medium_train
+    randomize_cable: true
+    tau_jnt_limit: 30.0
+  residual:
+    residual_force_scale: 2.0
+  reward:
+    w_ee: 500.0
+    w_q: 2.0
+    w_f: 0.003
+    w_df: 0.001
+    w_tau: 0.003
+    w_sat: 0.05
+    w_lim: 10.0
+    use_ee_l1: true
+    w_ee_l1: 5.0
+    use_improvement_reward: false
+    w_improve: 10.0
+eval_freq: 5000
+eval_episodes: 20
+eval_seed_start: 10000
+eval_seed_count: 20
+checkpoint_freq: 10000
+early_stop: true
+early_stop_fields:
+  enabled: true
+  patience_evals: 6
+  min_improvement: 0.005
+  min_train_steps_before_stop: 25000
+  min_return_vs_baseline: null
+  saturation_margin_over_baseline: 0.1
+  limit_margin_over_baseline: 0.01
+  hard_max_saturation_fraction: 0.95
+  hard_max_limit_violation_fraction: 0.1
+  max_saturation_step_frac: null
+  max_limit_step_frac: null
+  max_mean_ee_error: null
+  action_l2_collapse_frac: 0.02
+  action_abs_explosion: 1.02
+  anomaly_patience_evals: 4
+sac_kwargs:
+  learning_rate: 0.0003
+  buffer_size: 200000
+  learning_starts: 1000
+  batch_size: 256
+  tau: 0.005
+  gamma: 0.99
+  train_freq: 1
+  gradient_steps: 1
+  ent_coef: auto
+  verbose: 1
+  tensorboard_log: /home/keti/Project/12_FieldSensor/PMI_Project/pmi_hybrid_arm_mujoco/debug_outputs/sac_residual_task_force/runs/sac_tf_tracking_reward_rs2_30k_s2/tensorboard

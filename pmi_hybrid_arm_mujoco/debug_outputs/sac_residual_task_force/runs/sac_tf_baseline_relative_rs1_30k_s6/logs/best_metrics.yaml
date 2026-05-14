@@ -1,0 +1,33 @@
+best_reward: -1048.2126588042972
+best_reward_step: 30000
+best_ee_rms: 0.02068739808135961
+best_ee_rms_step: 1
+best_final_ee_error: 0.019394828809532142
+best_saturation_fraction: 0.7437461074030334
+best_limit_violation_fraction: 0.02038551682346749
+best_combined_tracking_score: 0.029787302142060715
+best_combined_tracking_step: 15000
+best_smooth_tracking_score: 3.3251773131089446
+best_smooth_tracking_step: 10000
+best_smooth_tracking_metrics:
+  mean_ee_rms: 0.02077889863645355
+  mean_final_ee_error: 0.01885510356435722
+  mean_rms_ee_error_velocity: 0.8665915669064133
+  mean_rms_ee_error_highfreq: 0.011965537411698035
+  mean_rms_tau_total_rate: 3251.401973596759
+  mean_smooth_tracking_score: 3.3251773131089446
+  mean_sat_frac: 0.7406551266785406
+  mean_lim_frac: 0.021073686511638365
+best_relative_smooth_score: 3.3251773131089446
+best_relative_smooth_step: 10000
+best_relative_smooth_metrics:
+  mean_smooth_tracking_score: 3.3251773131089446
+  mean_ee_rms: 0.02077889863645355
+  mean_final_ee_error: 0.01885510356435722
+  mean_rms_ee_error_velocity: 0.8665915669064133
+  mean_rms_ee_error_highfreq: 0.011965537411698035
+  mean_rms_tau_total_rate: 3251.401973596759
+  mean_sat_frac: 0.7406551266785406
+  mean_lim_frac: 0.021073686511638365
+  relative_smooth_note: proxy=mean_smooth_tracking_score during periodic eval (true
+    paired relative_smooth_score is from evaluate_sac_residual --paired-seeds).

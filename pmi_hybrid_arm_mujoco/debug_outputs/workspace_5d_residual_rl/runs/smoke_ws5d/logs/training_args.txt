@@ -1,0 +1,1 @@
+--run-name smoke_ws5d --timesteps 350 --eval-freq 150 --checkpoint-freq 1000 --eval-episodes 2 --seed 0 --no-vecnormalize

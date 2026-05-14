@@ -1,0 +1,8 @@
+run_name,seed,profile,eval_type,global_step,utc_iso,logger_keys_concat
+sac_tf_smooth_final_rs1_30k_s5,5,medium_train,callback_followup_periodic_eval,1,2026-05-13T06:26:49+00:00,
+sac_tf_smooth_final_rs1_30k_s5,5,medium_train,callback_followup_periodic_eval,5000,2026-05-13T06:27:53+00:00,train/actor_loss=-23.8088;train/critic_loss=0.0782336;train/ent_coef=0.740969;train/ent_coef_loss=-1.52429;train/learning_rate=0.0001;train/n_updates=2999
+sac_tf_smooth_final_rs1_30k_s5,5,medium_train,callback_followup_periodic_eval,10000,2026-05-13T06:29:10+00:00,train/actor_loss=-41.1656;train/critic_loss=0.093962;train/ent_coef=0.449554;train/ent_coef_loss=-4.01897;train/learning_rate=0.0001;train/n_updates=7999
+sac_tf_smooth_final_rs1_30k_s5,5,medium_train,callback_followup_periodic_eval,15000,2026-05-13T06:30:27+00:00,train/actor_loss=-44.1887;train/critic_loss=0.0746384;train/ent_coef=0.272809;train/ent_coef_loss=-6.48007;train/learning_rate=0.0001;train/n_updates=12999
+sac_tf_smooth_final_rs1_30k_s5,5,medium_train,callback_followup_periodic_eval,20000,2026-05-13T06:31:43+00:00,train/actor_loss=-41.1433;train/critic_loss=0.0464414;train/ent_coef=0.165642;train/ent_coef_loss=-8.91473;train/learning_rate=0.0001;train/n_updates=17999
+sac_tf_smooth_final_rs1_30k_s5,5,medium_train,callback_followup_periodic_eval,25000,2026-05-13T06:32:58+00:00,train/actor_loss=-35.4046;train/critic_loss=0.0346181;train/ent_coef=0.100498;train/ent_coef_loss=-11.3731;train/learning_rate=0.0001;train/n_updates=22999
+sac_tf_smooth_final_rs1_30k_s5,5,medium_train,callback_followup_periodic_eval,30000,2026-05-13T06:34:14+00:00,train/actor_loss=-28.94;train/critic_loss=0.0233956;train/ent_coef=0.0609768;train/ent_coef_loss=-13.7335;train/learning_rate=0.0001;train/n_updates=27999

@@ -1,0 +1,83 @@
+env:
+  model_path: models/pmi_hybrid_no_collision.xml
+  episode_duration: 5.0
+  control_dt: 0.01
+  tau_jnt_limit: 30
+  randomize_cable: false
+  randomization_profile: medium_train
+  normalize_observation: true
+curriculum:
+  stage: medium_train
+  stages:
+    deterministic:
+      randomize_cable: false
+    mild:
+      randomize_cable: true
+      randomization_profile: mild
+    medium_v2:
+      randomize_cable: true
+      randomization_profile: medium_v2
+    medium_train:
+      randomize_cable: true
+      randomization_profile: medium_train
+nominal_vsd:
+  control_mode: jt
+  lambda_dls: 0.12
+  rp_weight: 0.065
+  K_xyz:
+  - 150.0
+  - 150.0
+  - 230.0
+  D_xyz:
+  - 5.28
+  - 5.28
+  - 5.28
+  K_rp:
+  - 51.5
+  - 51.5
+  D_rp:
+  - 1.15
+  - 1.15
+  K_dls_joint: 4.0
+  D_dls_joint: 2.0
+residual:
+  type: workspace_5d_wrench
+  residual_mapping: jt
+  residual_force_scale: 0.5
+  residual_moment_scale: 0.02
+  residual_gain: 1.0
+  residual_rp_weight: 0.1
+  lambda_res_dls: 0.05
+  K_res_dls: 2.0
+  D_res_dls: 0.5
+  residual_filter_enabled: true
+  force_filter_tau: 0.03
+  moment_filter_tau: 0.05
+  rate_limit_enabled: true
+  max_delta_force_per_step: 0.1
+  max_delta_moment_per_step: 0.005
+  terminal_fade_enabled: true
+  final_fade_duration: 0.3
+reward:
+  w_xyz: 1000.0
+  w_xyz_l1: 20.0
+  w_rp: 20.0
+  w_edot: 1.0
+  w_res: 0.01
+  w_dres: 0.02
+  w_tau_res: 0.005
+  w_tau_rate: 0.001
+  w_sat: 1.0
+  w_lim: 20.0
+  w_final_xyz: 200.0
+  w_final_rp: 50.0
+sac:
+  learning_rate: 0.0001
+  buffer_size: 200000
+  batch_size: 256
+  gamma: 0.99
+  tau: 0.005
+  train_freq: 1
+  gradient_steps: 1
+  learning_starts: 2000
+  ent_coef: auto

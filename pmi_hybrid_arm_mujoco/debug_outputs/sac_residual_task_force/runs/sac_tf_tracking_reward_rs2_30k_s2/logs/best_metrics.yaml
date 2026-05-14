@@ -1,0 +1,7 @@
+best_reward: -281.48050221077864
+best_reward_step: 30000
+best_ee_rms: 0.019809995154185345
+best_ee_rms_step: 30000
+best_final_ee_error: 0.01853348661322523
+best_saturation_fraction: 0.7510637828818604
+best_limit_violation_fraction: 0.01945322176079916

@@ -1,0 +1,30 @@
+% Workspace 5D VSD + learned task-space residual (simulation summary snippet)
+% Yaw is uncontrolled (free).
+% Collision disabled in reported runs.
+
+\paragraph{Method (short)}
+Nominal torques $\bm{\tau}_{\mathrm{vsd}}\in\mathbb{R}^4$ come from the workspace velocity damping (5D task) controller.
+The policy outputs a 5D wrench $\mathbf{W}_{\mathrm{res}}=[F_x,F_y,F_z,M_{\mathrm{roll}},M_{\mathrm{pitch}}]^\top$ mapped to joint torque and added:
+\begin{equation}
+  \bm{\tau}_{\mathrm{cmd}} = \bm{\tau}_{\mathrm{vsd}} + \mathbf{J}_{5\mathrm{D}}^\top \mathbf{W}_{\mathrm{res}}\,,
+\end{equation}
+with $\mathbf{J}_{5\mathrm{D}}\in\mathbb{R}^{5\times 4}$ the task Jacobian (translations and roll/pitch rates). Yaw is not regulated.
+
+\paragraph{Results (placeholder)}
+\begin{table}[t]
+  \centering
+  \caption{Curriculum stages — percent improvement vs.\ zero residual (simulation).}
+  \begin{tabular}{lccc}
+    \hline
+    Stage & RMS EE & Final EE & RMS HF \\
+    \hline
+    deterministic & 47.64 & 45.72 & 28.53 \\
+    mild & 50.98 & 69.98 & 30.33 \\
+    medium\_v2 & 44.32 & 57.07 & 22.25 \\
+    medium\_train & 44.54 & 47.35 & 14.91 \\
+    \hline
+  \end{tabular}
+\end{table}
+
+\paragraph{Limitations}
+Simulation-only; no hardware validation. Collisions off. Stress profile used for evaluation only, not training.

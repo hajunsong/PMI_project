@@ -160,3 +160,14 @@ pmi_hybrid_arm_mujoco/**/*.py[cod]
 pmi_hybrid_arm_mujoco/debug_outputs/cable_layer/
 pmi_hybrid_arm_mujoco/debug_outputs/task_space_demo/
 pmi_hybrid_arm_mujoco/debug_outputs/task_space_comparison/
+
+# 하이브리드 MuJoCo — RL/SAC·워크스페이스 실험 대용량 산출물 (체크포인트·VecNormalize·녹화 등, GitHub 용량 제한)
+pmi_hybrid_arm_mujoco/debug_outputs/**/*.zip
+pmi_hybrid_arm_mujoco/debug_outputs/**/*.mp4
+pmi_hybrid_arm_mujoco/debug_outputs/**/*.pkl
+pmi_hybrid_arm_mujoco/debug_outputs/**/*.pt
+pmi_hybrid_arm_mujoco/debug_outputs/**/*.pth
+pmi_hybrid_arm_mujoco/debug_outputs/**/tensorboard/
+pmi_hybrid_arm_mujoco/debug_outputs/**/*.tfevents.*
+pmi_hybrid_arm_mujoco/debug_outputs/**/checkpoints/
+pmi_hybrid_arm_mujoco/debug_outputs/**/vecnormalize/

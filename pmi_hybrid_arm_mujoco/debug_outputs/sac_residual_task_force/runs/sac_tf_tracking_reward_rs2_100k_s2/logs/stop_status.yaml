@@ -1,0 +1,7 @@
+stop_reason: early_stop:eval_plateau_patience
+completed: false
+early_stopped: true
+interrupted: false
+exception: false
+final_timesteps: 80000
+wall_time: 949.471705960008

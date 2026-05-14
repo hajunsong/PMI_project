@@ -1,0 +1,75 @@
+config: /home/keti/Project/12_FieldSensor/PMI_Project/pmi_hybrid_arm_mujoco/configs/rl_sac.yaml
+profile: medium_train
+run_name: sac_tf_smooth_final_rs1_30k_s5
+timesteps: 30000
+seed: 5
+use_vecnormalize: true
+resume: false
+reward_preset: tracking_smooth_final
+residual_filter_cli: true
+residual_filter_tau_cli: 0.03
+rl_overrides:
+  env:
+    randomization_profile: medium_train
+    randomize_cable: true
+    tau_jnt_limit: 30.0
+  residual:
+    residual_force_scale: 1.0
+  residual_filter:
+    enabled: true
+    tau: 0.03
+  reward:
+    w_ee: 600.0
+    w_q: 1.0
+    w_f: 0.01
+    w_df: 0.01
+    w_tau: 0.005
+    w_tau_rate: 0.002
+    w_sat: 0.05
+    w_lim: 10.0
+    use_ee_l1: true
+    w_ee_l1: 8.0
+    w_ee_vel: 2.0
+    w_ee_acc: 0.02
+    w_ee_highfreq: 50.0
+    highfreq_lp_hz: 8.0
+    use_improvement_reward: false
+    w_improve: 10.0
+    use_terminal_final_error_penalty: true
+    w_final_ee: 80.0
+    use_terminal_final_velocity_penalty: true
+    w_final_ee_vel: 5.0
+eval_freq: 5000
+eval_episodes: 30
+eval_seed_start: 10000
+eval_seed_count: 30
+checkpoint_freq: 5000
+early_stop: true
+early_stop_fields:
+  enabled: true
+  patience_evals: 6
+  min_improvement: 0.003
+  min_train_steps_before_stop: 20000
+  min_return_vs_baseline: null
+  saturation_margin_over_baseline: 0.1
+  limit_margin_over_baseline: 0.01
+  hard_max_saturation_fraction: 0.95
+  hard_max_limit_violation_fraction: 0.1
+  max_saturation_step_frac: null
+  max_limit_step_frac: null
+  max_mean_ee_error: null
+  action_l2_collapse_frac: 0.02
+  action_abs_explosion: 1.02
+  anomaly_patience_evals: 4
+sac_kwargs:
+  learning_rate: 0.0001
+  buffer_size: 200000
+  learning_starts: 2000
+  batch_size: 256
+  tau: 0.005
+  gamma: 0.99
+  train_freq: 1
+  gradient_steps: 1
+  ent_coef: auto
+  verbose: 1
+  tensorboard_log: /home/keti/Project/12_FieldSensor/PMI_Project/pmi_hybrid_arm_mujoco/debug_outputs/sac_residual_task_force/runs/sac_tf_smooth_final_rs1_30k_s5/tensorboard

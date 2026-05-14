@@ -1,0 +1,20 @@
+best_reward: -46489.319193374846
+best_reward_step: 25000
+best_ee_rms: 0.020719210532231205
+best_ee_rms_step: 20000
+best_final_ee_error: 0.01849162008651211
+best_saturation_fraction: 0.7445298429714285
+best_limit_violation_fraction: 0.02195142636463867
+best_combined_tracking_score: 0.0297049141645345
+best_combined_tracking_step: 25000
+best_smooth_tracking_score: 3.317663930012385
+best_smooth_tracking_step: 25000
+best_smooth_tracking_metrics:
+  mean_ee_rms: 0.020759690220518028
+  mean_final_ee_error: 0.01789044788803294
+  mean_rms_ee_error_velocity: 0.8657203880406699
+  mean_rms_ee_error_highfreq: 0.012000227260782089
+  mean_rms_tau_total_rate: 3244.4329919006022
+  mean_smooth_tracking_score: 3.317663930012385
+  mean_sat_frac: 0.7398645165713931
+  mean_lim_frac: 0.021386848359684827

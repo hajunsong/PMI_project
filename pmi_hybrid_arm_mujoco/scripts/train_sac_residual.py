@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """SAC training on PMICableResidualEnv with run layout, baseline eval, diagnostics callback.
 
-Layout per run::
+    Layout per run::
 
     debug_outputs/sac_residual_task_force/runs/<run_name>/
-      checkpoints/   (checkpoint_<step>.zip, best_model.zip, final_model.zip, stopped_model.zip)
+      checkpoints/   (checkpoint_<step>.zip, best_model_by_reward.zip, best_model_by_ee_rms.zip,
+                      best_model_by_combined_tracking.zip, best_model_by_smooth_tracking.zip,
+                      baseline-relative 학습 시 best_model_by_relative_smooth_score.zip, final_model.zip, stopped_model.zip)
       replay_buffer/replay_buffer.pkl
       vecnormalize/vecnormalize.pkl  (if enabled)
-      logs/  (CSV/YAML/MD, train_monitor.csv, early_stop_reason.txt, monitor.csv)
+      logs/  (CSV/YAML/MD, train_monitor.csv, early_stop_reason.txt, stop_status.yaml, best_metrics.yaml, monitor.csv)
       tensorboard/
 
 Example::
@@ -23,6 +25,7 @@ import argparse
 import csv
 import subprocess
 import sys
+import time
 import traceback
 from dataclasses import asdict
 from pathlib import Path
@@ -47,7 +50,7 @@ from callbacks.sac_diagnostics_callback import (
     write_eval_baseline_row,
 )
 from callbacks.train_monitor_csv import TrainMonitorCsvWrapper
-from envs.pmi_cable_residual_env import PMICableResidualEnv
+from envs.pmi_cable_residual_env import PMICableResidualEnv, _deep_merge
 from utils.mujoco_helpers import load_yaml
 
 
@@ -115,6 +118,57 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--learning-starts", type=int, default=None, help="Override YAML learning_starts")
     ap.add_argument("--residual-force-scale", type=float, default=None, help="Override residual.residual_force_scale")
     ap.add_argument("--tau-jnt-limit", type=float, default=None, help="Override env.tau_jnt_limit")
+    ap.add_argument(
+        "--reward-preset",
+        type=str,
+        default="default",
+        help="Name under ``reward_presets`` in configs/rl_sac.yaml "
+        "(e.g. default, tracking_focused, tracking_smooth_final, baseline_relative_smooth)",
+    )
+    ap.add_argument("--residual-filter", dest="residual_filter", action="store_true", help="Enable residual_filter.enabled in RL overrides")
+    ap.add_argument("--no-residual-filter", dest="residual_filter", action="store_false", help="Force-disable residual force low-pass filter")
+    ap.set_defaults(residual_filter=None)
+    ap.add_argument("--residual-filter-tau", type=float, default=None, help="Residual low-pass time constant tau (seconds)")
+    ap.add_argument(
+        "--baseline-relative-reward",
+        dest="baseline_relative_reward",
+        action="store_true",
+        help="Enable baseline_relative_reward.enabled (cached zero-rollout reference per episode).",
+    )
+    ap.add_argument(
+        "--no-baseline-relative-reward",
+        dest="baseline_relative_reward",
+        action="store_false",
+        help="Disable baseline-relative reward overrides.",
+    )
+    ap.set_defaults(baseline_relative_reward=None)
+    ap.add_argument(
+        "--include-baseline-reference-in-obs",
+        dest="include_baseline_reference_in_obs",
+        action="store_true",
+        help="Append baseline-vs-current EE features to observations (OBS dim +8; requires compatible VecNormalize).",
+    )
+    ap.add_argument(
+        "--no-include-baseline-reference-in-obs",
+        dest="include_baseline_reference_in_obs",
+        action="store_false",
+    )
+    ap.set_defaults(include_baseline_reference_in_obs=None)
+    ap.add_argument(
+        "--action-smoothing",
+        dest="action_smoothing",
+        action="store_true",
+        help="Enable action_smoothing.enabled before residual_filter stage.",
+    )
+    ap.add_argument("--no-action-smoothing", dest="action_smoothing", action="store_false")
+    ap.set_defaults(action_smoothing=None)
+    ap.add_argument(
+        "--max-delta-force-per-step",
+        type=float,
+        default=None,
+        help="Optional action_smoothing.max_delta_force_per_step override (slew-limit on residual force increment).",
+    )
+
     ap.add_argument("--analyze-after", action="store_true", help="Run scripts/analyze_sac_training_logs.py at end")
 
     return ap.parse_args()
@@ -172,6 +226,44 @@ def _latest_eval_csv_row(logs_dir: Path, eval_type: str, run_name: str) -> dict[
     return max(cand, key=row_gs)
 
 
+def _load_paired_evaluation_summary(logs_dir: Path) -> dict[str, Any] | None:
+    """``paired_evaluation.csv`` 가 있으면 평균 final EE 및 분류 문자열을 반환."""
+    p = logs_dir / "paired_evaluation.csv"
+    if not p.is_file():
+        return None
+    with p.open("r", encoding="utf-8", newline="") as f:
+        rows = list(csv.DictReader(f))
+    if not rows:
+        return None
+
+    def col_mean(key: str) -> float:
+        xs: list[float] = []
+        for r in rows:
+            try:
+                xs.append(float(r[key]))
+            except (KeyError, TypeError, ValueError):
+                pass
+        return float(np.nanmean(np.asarray(xs, dtype=np.float64))) if xs else float("nan")
+
+    mfz = col_mean("final_ee_zero")
+    mfs = col_mean("final_ee_sac")
+    mdf = col_mean("delta_final_ee")
+    mdz = col_mean("delta_ee_rms")
+    ftol = max(5e-7, 0.002 * abs(mfz)) if mfz == mfz else 5e-7
+    fin_cls: str | None = None
+    if mdz == mdz and mdf == mdf and mdz < 0 and mdf > ftol:
+        fin_cls = "tracking_improved_but_final_error_worse"
+
+    return {
+        "mean_final_ee_zero": mfz,
+        "mean_final_ee_sac": mfs,
+        "mean_delta_final_ee": mdf,
+        "mean_delta_ee_rms": mdz,
+        "paired_final_error_classification": fin_cls,
+        "csv_path": str(p.resolve()),
+    }
+
+
 def _write_summary_md(
     run_dir: Path,
     *,
@@ -189,6 +281,33 @@ def _write_summary_md(
 
     fin = _latest_eval_csv_row(logs_dir, "final_eval", run_name)
 
+    bm_path = logs_dir / "best_metrics.yaml"
+    best_blob: dict[str, Any] = {}
+    if bm_path.is_file():
+        try:
+            raw = yaml.safe_load(bm_path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                best_blob = raw
+        except Exception:
+            best_blob = {}
+
+    fr_ret = fr_ee = fr_sat = fr_lim = float("nan")
+    if fin is not None:
+        try:
+            fr_ret = float(fin["mean_episode_return"])
+            fr_ee = float(fin["mean_ee_rms"])
+            fr_sat = float(fin["mean_sat_frac"])
+            fr_lim = float(fin["mean_lim_frac"])
+        except (KeyError, TypeError, ValueError):
+            pass
+
+    successful_tracking = False
+    if bl_ee == bl_ee and fr_ee == fr_ee:
+        successful_tracking = fr_ee < bl_ee
+
+    def cell(x: float) -> str:
+        return "—" if x != x else f"{x:.6g}"
+
     lines = [
         "# SAC residual training summary",
         "",
@@ -197,30 +316,62 @@ def _write_summary_md(
         f"- **requested timesteps**: {timesteps}",
         f"- **baseline mean episode return (zero policy)**: {bl_ret}",
         f"- **stop / completion reason**: {stopped_reason or 'completed'}",
+        f"- **successful_tracking_improvement** (final mean EE RMS < baseline mean EE RMS): {successful_tracking}",
         "",
         f"Artifacts: `{run_dir}/checkpoints/`, `{run_dir}/logs/`, `{run_dir}/tensorboard/`.",
         "",
-        "## Diagnostic table (baseline vs final eval)",
+        "## Best checkpoints (from periodic eval)",
         "",
-        "| Metric | Baseline (zero policy) | Final eval |",
-        "| --- | --- | --- |",
     ]
+
+    if best_blob:
+        lines.append(
+            f"- **best reward checkpoint** (`best_model_by_reward.zip`): reward={best_blob.get('best_reward')}, "
+            f"step={best_blob.get('best_reward_step')}"
+        )
+        lines.append(
+            f"- **best EE RMS checkpoint** (`best_model_by_ee_rms.zip`): mean_ee_rms={best_blob.get('best_ee_rms')}, "
+            f"step={best_blob.get('best_ee_rms_step')} "
+            f"(mean final EE error at that eval: {best_blob.get('best_final_ee_error')}, "
+            f"sat={best_blob.get('best_saturation_fraction')}, lim={best_blob.get('best_limit_violation_fraction')})"
+        )
+        if best_blob.get("best_combined_tracking_score") is not None:
+            lines.append(
+                f"- **best combined tracking** (`best_model_by_combined_tracking.zip`): "
+                f"score={best_blob.get('best_combined_tracking_score')} "
+                f"(mean EE RMS + 0.5×mean final EE error), step={best_blob.get('best_combined_tracking_step')}"
+            )
+        bss = best_blob.get("best_smooth_tracking_score")
+        if bss is not None and bss == bss:
+            lines.append(
+                f"- **best smooth tracking** (`best_model_by_smooth_tracking.zip`): score={bss}, "
+                f"step={best_blob.get('best_smooth_tracking_step')} "
+                f"(lower = better RMS + weighted final / velocity / HF / torque rates; see `logs/best_metrics.yaml`)"
+            )
+        brls = best_blob.get("best_relative_smooth_score")
+        if brls is not None and brls == brls:
+            lines.append(
+                f"- **best baseline-relative (proxy) smooth** (`best_model_by_relative_smooth_score.zip`): score={brls}, "
+                f"step={best_blob.get('best_relative_smooth_step')} "
+                f"(periodic eval uses `mean_smooth_tracking_score` as proxy; 짝 평가로 상대 지표 확정)"
+            )
+    else:
+        lines.append("- *(no `logs/best_metrics.yaml` — no periodic eval best summary)*")
+
+    lines.extend(
+        [
+            "",
+            "## Diagnostic table (baseline vs final eval)",
+            "",
+            "| Metric | Baseline (zero policy) | Final eval |",
+            "| --- | --- | --- |",
+        ]
+    )
 
     if fin is None:
         lines.append("| *(final eval row missing)* | — | — |")
         lines.extend(["", "(학습 종료 후 `eval_log.csv`에 `final_eval` 행이 없으면 표를 채울 수 없습니다.)", ""])
     else:
-        try:
-            fr_ret = float(fin["mean_episode_return"])
-            fr_ee = float(fin["mean_ee_rms"])
-            fr_sat = float(fin["mean_sat_frac"])
-            fr_lim = float(fin["mean_lim_frac"])
-        except (KeyError, TypeError, ValueError):
-            fr_ret = fr_ee = fr_sat = fr_lim = float("nan")
-
-        def cell(x: float) -> str:
-            return "—" if x != x else f"{x:.6g}"
-
         lines.append(f"| mean episode return | {cell(bl_ret)} | {cell(fr_ret)} |")
         lines.append(f"| mean EE RMS (m) | {cell(bl_ee)} | {cell(fr_ee)} |")
         lines.append(f"| mean saturation fraction | {cell(bl_sat)} | {cell(fr_sat)} |")
@@ -243,7 +394,137 @@ def _write_summary_md(
             ]
         )
 
+    paired_sum = _load_paired_evaluation_summary(logs_dir)
+
+    lines.extend(
+        [
+            "## Paired evaluation",
+            "",
+            "같은 케이블/환경 시드에서 잔차 0 베이스라인과 SAC를 짝지어 평가하면, 랜덤 시드 변동에 가려진 개선 여부를 확인할 수 있습니다.",
+            "",
+        ]
+    )
+
+    if paired_sum is not None:
+        pc = paired_sum.get("paired_final_error_classification")
+        lines.extend(
+            [
+                "### Results from `logs/paired_evaluation.csv`",
+                "",
+                f"- **mean final EE (zero policy)**: {paired_sum['mean_final_ee_zero']}",
+                f"- **mean final EE (SAC)**: {paired_sum['mean_final_ee_sac']}",
+                f"- **mean delta final EE** (SAC − zero): {paired_sum['mean_delta_final_ee']}",
+                f"- **mean delta EE RMS** (SAC − zero): {paired_sum['mean_delta_ee_rms']}",
+                "",
+                f"- **paired_final_error_classification**: `{pc}`"
+                if pc
+                else "- **paired_final_error_classification**: *(not applicable)*",
+                "",
+            ]
+        )
+        if pc == "tracking_improved_but_final_error_worse":
+            lines.extend(
+                [
+                    "**Recommendation:** 평균 EE RMS는 개선되었으나 종료 시점 EE 오차가 악화되었습니다. "
+                    "`tracking_focused` 프리셋의 종료 시점 final EE 패널티(`use_terminal_final_error_penalty`)를 켠 채 학습을 이어가는 것을 권장합니다.",
+                    "",
+                ]
+            )
+
+    lines.extend(
+        [
+            "### 권장: baseline-relative 학습 (다음 실험 후보)",
+            "",
+            "베이스라인 VSD(동일 케이블 시드에서 잔차 0) 대비 개선을 보상에 직접 넣을 때 사용합니다. "
+            "주기적 평가에서는 `best_model_by_relative_smooth_score.zip` 선택에 `mean_smooth_tracking_score` 프록시가 쓰이며, "
+            "학습 후에는 아래 짝 평가로 최종 판정합니다.",
+            "",
+            "```bash",
+            "python scripts/train_sac_residual.py \\",
+            "  --timesteps 30000 --profile medium_train --run-name sac_tf_baseline_relative_rs1_30k_s6 --seed 6 \\",
+            "  --progress --early-stop \\",
+            "  --eval-freq 5000 --eval-episodes 30 --checkpoint-freq 5000 \\",
+            "  --min-train-steps-before-stop 20000 --patience-evals 6 --min-improvement 0.003 \\",
+            "  --learning-rate 0.0001 --batch-size 256 --buffer-size 200000 --learning-starts 2000 \\",
+            "  --residual-force-scale 1.0 --tau-jnt-limit 30 \\",
+            "  --reward-preset baseline_relative_smooth \\",
+            "  --baseline-relative-reward --include-baseline-reference-in-obs \\",
+            "  --residual-filter --residual-filter-tau 0.08 \\",
+            "  --action-smoothing --max-delta-force-per-step 0.2 \\",
+            "  --use-vecnormalize",
+            "```",
+            "",
+            "```bash",
+            "python scripts/evaluate_sac_residual.py --paired-seeds --model-path <run_dir>/checkpoints/final_model.zip \\",
+            "  --vecnormalize-path <run_dir>/vecnormalize/vecnormalize.pkl \\",
+            "  --config configs/rl_sac.yaml --profile medium_train --seed-start 10000 --num-episodes 20",
+            "```",
+            "",
+        ]
+    )
+
     (logs_dir / "training_summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _write_next_run_recommendation_md(
+    run_dir: Path,
+    *,
+    baseline_metrics: dict[str, Any],
+    run_name: str,
+) -> None:
+    """Heuristic 다음 런 권장사항 (`logs/next_run_recommendation.md`)."""
+    logs_dir = run_dir / "logs"
+    fin = _latest_eval_csv_row(logs_dir, "final_eval", run_name)
+    bl_ret = float(baseline_metrics.get("mean_episode_return", float("nan")))
+    bl_ee = float(baseline_metrics.get("mean_ee_rms", float("nan")))
+    bl_sat = float(baseline_metrics.get("mean_sat_frac", float("nan")))
+
+    fr_ret = fr_ee = fr_sat = float("nan")
+    if fin:
+        try:
+            fr_ret = float(fin["mean_episode_return"])
+            fr_ee = float(fin["mean_ee_rms"])
+            fr_sat = float(fin["mean_sat_frac"])
+        except (KeyError, TypeError, ValueError):
+            pass
+
+    ret_improved = bl_ret == bl_ret and fr_ret == fr_ret and fr_ret > bl_ret
+    ee_worse = bl_ee == bl_ee and fr_ee == fr_ee and fr_ee > bl_ee
+    ee_better = bl_ee == bl_ee and fr_ee == fr_ee and fr_ee < bl_ee
+    sat_up = bl_sat == bl_sat and fr_sat == fr_sat and fr_sat > bl_sat + 1e-6
+
+    bullets: list[str] = []
+    if ret_improved and ee_worse:
+        bullets.extend(
+            [
+                "- Return은 개선되었으나 EE RMS가 악화되었습니다.",
+                "- `tracking_focused` 보상(`--reward-preset tracking_focused`) 전환을 검토하세요.",
+                "- `--residual-force-scale`을 낮추는 것을 검토하세요.",
+                "- 베스트 모델은 EE RMS 기준(`best_model_by_ee_rms.zip`)을 사용하세요.",
+                "- `scripts/evaluate_sac_residual.py --paired-seeds`로 짝 평가를 먼저 수행하세요.",
+                "- 동일 설정으로 타임스텝만 늘리는 것은 권장하지 않습니다.",
+            ]
+        )
+    elif ee_better and not sat_up:
+        bullets.extend(
+            [
+                "- EE RMS가 개선되었고 포화율이 크게 나빠지지 않았습니다.",
+                "- 동일 보상으로 더 긴 학습을 검토할 수 있습니다.",
+                "- 필요 시 `medium` 등 일반화 프로파일에서 `evaluate_sac_residual.py`로 추가 평가하세요.",
+            ]
+        )
+    else:
+        bullets.append("- 결과를 바탕으로 하이퍼파라미터·보상 가중치·잔차 스케일을 조정해 반복 실험하세요.")
+
+    text = "\n".join(
+        [
+            "# Next run recommendation",
+            "",
+            *bullets,
+            "",
+        ]
+    )
+    (logs_dir / "next_run_recommendation.md").write_text(text + "\n", encoding="utf-8")
 
 
 def _save_all(
@@ -294,6 +575,40 @@ def main() -> None:
         rl_overrides["env"]["tau_jnt_limit"] = float(args.tau_jnt_limit)
     if args.residual_force_scale is not None:
         rl_overrides.setdefault("residual", {})["residual_force_scale"] = float(args.residual_force_scale)
+
+    preset_name = str(args.reward_preset)
+    presets_map = sac_yaml.get("reward_presets") or {}
+    if preset_name not in presets_map:
+        raise SystemExit(
+            f"[train_sac_residual] unknown --reward-preset {preset_name!r}; "
+            f"expected one of {sorted(presets_map)}"
+        )
+
+    if args.residual_filter is not None:
+        rl_overrides.setdefault("residual_filter", {})["enabled"] = bool(args.residual_filter)
+    if args.residual_filter_tau is not None:
+        rl_overrides.setdefault("residual_filter", {})["tau"] = float(args.residual_filter_tau)
+    base_r = dict(sac_yaml.get("reward") or {})
+    rl_overrides["reward"] = _deep_merge(base_r, dict(presets_map[preset_name]))
+
+    br = getattr(args, "baseline_relative_reward", None)
+    if br is not None:
+        rl_overrides.setdefault("baseline_relative_reward", {})["enabled"] = bool(br)
+    ibo = getattr(args, "include_baseline_reference_in_obs", None)
+    if ibo is not None:
+        rl_overrides.setdefault("baseline_relative_reward", {})["include_baseline_reference_in_obs"] = bool(ibo)
+    asm = getattr(args, "action_smoothing", None)
+    if asm is not None:
+        rl_overrides.setdefault("action_smoothing", {})["enabled"] = bool(asm)
+    if getattr(args, "max_delta_force_per_step", None) is not None:
+        rl_overrides.setdefault("action_smoothing", {})["max_delta_force_per_step"] = float(args.max_delta_force_per_step)
+
+    if preset_name == "baseline_relative_smooth":
+        bro = rl_overrides.setdefault("baseline_relative_reward", {})
+        if getattr(args, "baseline_relative_reward", None) is None:
+            bro["enabled"] = True
+        if getattr(args, "include_baseline_reference_in_obs", None) is None:
+            bro.setdefault("include_baseline_reference_in_obs", True)
 
     eval_seed_count = int(args.eval_seed_count) if args.eval_seed_count is not None else int(args.eval_episodes)
     if eval_seed_count != int(args.eval_episodes):
@@ -401,6 +716,13 @@ def main() -> None:
         "seed": args.seed,
         "use_vecnormalize": use_vn,
         "resume": resume,
+        "reward_preset": preset_name,
+        "residual_filter_cli": args.residual_filter,
+        "residual_filter_tau_cli": args.residual_filter_tau,
+        "baseline_relative_reward_cli": getattr(args, "baseline_relative_reward", None),
+        "include_baseline_reference_in_obs_cli": getattr(args, "include_baseline_reference_in_obs", None),
+        "action_smoothing_cli": getattr(args, "action_smoothing", None),
+        "max_delta_force_per_step_cli": getattr(args, "max_delta_force_per_step", None),
         "rl_overrides": rl_overrides,
         "eval_freq": int(args.eval_freq),
         "eval_episodes": int(args.eval_episodes),
@@ -462,6 +784,7 @@ def main() -> None:
 
     stopped_reason: str | None = None
     model: SAC | None = None
+    train_wall_start: float | None = None
 
     try:
         if args.resume_from is not None:
@@ -483,6 +806,7 @@ def main() -> None:
                 file=sys.stderr,
             )
 
+        train_wall_start = time.perf_counter()
         model.learn(total_timesteps=int(args.timesteps), callback=diag_cb, progress_bar=use_progress)
         stopped_reason = str(diag_cb.stopped_reason) if diag_cb.stopped_reason else None
 
@@ -498,11 +822,48 @@ def main() -> None:
         reason_final = stopped_reason if stopped_reason else (str(cb_reason) if cb_reason else None)
         abnormal = reason_final not in (None, "")
 
+        n_ts = int(model.num_timesteps) if model is not None else 0
+        ts_req = int(args.timesteps)
+        wall_elapsed = (time.perf_counter() - train_wall_start) if train_wall_start is not None else 0.0
+
+        is_interrupt = stopped_reason == "keyboard_interrupt"
+        is_exception = bool(stopped_reason) and str(stopped_reason).startswith("exception:")
+        is_early = bool(cb_reason) and str(cb_reason).startswith("early_stop:")
+        completed_ok = (
+            not is_interrupt
+            and not is_exception
+            and not is_early
+            and n_ts >= ts_req
+            and model is not None
+        )
+
+        if is_interrupt:
+            early_stop_line = "KeyboardInterrupt"
+        elif is_exception:
+            early_stop_line = str(stopped_reason)
+        elif is_early and cb_reason:
+            early_stop_line = str(cb_reason)
+        else:
+            early_stop_line = "completed"
+
         esp = run_dir / "logs" / "early_stop_reason.txt"
-        if abnormal:
-            esp.write_text(str(reason_final) + "\n", encoding="utf-8")
-        elif esp.exists():
-            esp.unlink()
+        esp.parent.mkdir(parents=True, exist_ok=True)
+        esp.write_text(early_stop_line + "\n", encoding="utf-8")
+
+        stop_tag = early_stop_line
+        status_payload: dict[str, Any] = {
+            "stop_reason": stop_tag,
+            "completed": completed_ok,
+            "early_stopped": is_early,
+            "interrupted": is_interrupt,
+            "exception": is_exception,
+            "final_timesteps": n_ts,
+            "wall_time": float(wall_elapsed),
+        }
+        (run_dir / "logs" / "stop_status.yaml").write_text(
+            yaml.safe_dump(status_payload, sort_keys=False, allow_unicode=True),
+            encoding="utf-8",
+        )
 
         stopped_zip = run_dir / "checkpoints" / "stopped_model.zip"
         if not abnormal and stopped_zip.is_file():
@@ -537,11 +898,17 @@ def main() -> None:
         except Exception:
             pass
 
+        summary_stop = str(reason_final) if reason_final else "completed"
         _write_summary_md(
             run_dir,
             timesteps=int(args.timesteps),
             profile=str(args.profile),
-            stopped_reason=str(reason_final) if reason_final else "completed",
+            stopped_reason=summary_stop,
+            baseline_metrics=dict(baseline_metrics),
+            run_name=str(args.run_name),
+        )
+        _write_next_run_recommendation_md(
+            run_dir,
             baseline_metrics=dict(baseline_metrics),
             run_name=str(args.run_name),
         )

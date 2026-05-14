@@ -1,0 +1,7 @@
+stop_reason: completed
+completed: true
+early_stopped: false
+interrupted: false
+exception: false
+final_timesteps: 30000
+wall_time: 394.9439291669987

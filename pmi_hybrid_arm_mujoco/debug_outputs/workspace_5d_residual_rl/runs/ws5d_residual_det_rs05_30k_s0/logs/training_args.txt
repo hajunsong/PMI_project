@@ -1,0 +1,1 @@
+--config configs/rl_workspace_5d_sac.yaml --run-name ws5d_residual_det_rs05_30k_s0 --timesteps 30000 --seed 0 --progress --early-stop
