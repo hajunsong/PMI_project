@@ -171,3 +171,8 @@ pmi_hybrid_arm_mujoco/debug_outputs/**/tensorboard/
 pmi_hybrid_arm_mujoco/debug_outputs/**/*.tfevents.*
 pmi_hybrid_arm_mujoco/debug_outputs/**/checkpoints/
 pmi_hybrid_arm_mujoco/debug_outputs/**/vecnormalize/
+
+# 하이브리드 MuJoCo — debug_outputs 플롯/이미지 (스크립트로 재생성)
+pmi_hybrid_arm_mujoco/debug_outputs/**/*.png
+pmi_hybrid_arm_mujoco/debug_outputs/**/*.pdf
+pmi_hybrid_arm_mujoco/debug_outputs/**/*.svg
